@@ -5,6 +5,32 @@ sonidos, GUI y animaciones A/B) **+ LOCK, ESP y POSESIÓN REAL DEL CUERPO
 CARGADO** en **un solo archivo combinado**: sirve como script de servidor y
 como LocalScript/executor. Se adapta solo con `RunService:IsServer()`.
 
+# Spiderscript V13.5 - deteccion permisiva del agarre + NOCLIP
+
+Sistema **Spider-Man completo** (telarana, fisica de pendulo, trepa, camara,
+sonidos, GUI y animaciones A/B) **+ LOCK, ESP y POSESION REAL DEL CUERPO
+CARGADO** en **un solo archivo combinado**: sirve como script de servidor y
+como LocalScript/executor. Se adapta solo con `RunService:IsServer()`.
+
+> **Novedad V13.5: detecta el agarre de la pierna SI O SI + noclip**
+>
+> - En el Da Hood real el cuerpo que cargas puede tener `Dead = true` o
+>   `Health = 0` (es un cadaver) y el weld puede tardar en replicar.
+>   V13.4 rechazaba eso y de ahi el "No estas cargando a nadie".
+>   V13.5 acepta **cualquiera** de las senales reales del juego:
+>   `Grabbed` del que carga, `Grabbed` inverso (CarrySystem), weld
+>   `GRABBING_CONSTRAINT` en **cualquier direccion** o network owner.
+> - Ya **no se rechaza** por `Dead`/`Health`: un cadaver sigue siendo
+>   controlable mientras lo lleves agarrado.
+> - Si no detecta, el **HUD dice el motivo** (sin Grabbed, sin weld, lo
+>   carga otro jugador...) y la consola imprime `[Spidey V13.5]` para F9.
+> - Mientras controlas, si el juego **recrea el weld** de carga se apaga
+>   solo para que no arrastre al herido.
+> - Tu cuerpo original ahora tiene **NOCLIP**: atraviesa el piso y las
+>   paredes 13 studs mas abajo, mirando arriba y totalmente tieso. Al
+>   terminar se le devuelve su colision original.
+> - El servidor tambien resuelve la victima con cualquiera de las senales
+>   (antes solo miraba su propio `Grabbed`).
 > **Novedad V13.4: el modo con servidor también mantiene al herido como
 > cadáver**
 >
@@ -300,3 +326,44 @@ Los tres son **idénticos** al `SPIDER V13.4.lua` entregado.
 - Tamaño: **156.053 bytes**.
 - SHA256: `5986C6358D5A91C8F6172FB00E28A9A37CB30F108C34C1721E4683055DA8C311`.
 - Sintaxis validada con `luau-compile --only-parse` (exit 0).
+
+## Pruebas V13.5 (copia nueva `DESHOOOOODSESHOODS (1).rbxl` / place 10242026_3)
+
+Dummy fiel al juego real: **clon del jugador** con el sistema de ragdoll de la
+copia nueva (constraints de `CheckingKOED`, K.O, `FallingDown`, HRP anclado) y
+luego el agarre real del `HelperModule` (`Grabbed` del que carga + weld
+`GRABBING_CONSTRAINT` + `PlatformStand` + network owner al que carga).
+
+### Deteccion (todas pasaron)
+
+| Estado | Resultado |
+| --- | --- |
+| `Grabbed` + weld (Helper normal) | detecta `[Grabbed + weld]` |
+| Solo `Grabbed` | detecta `[Grabbed]` |
+| Solo `Grabbed` inverso (CarrySystem) | detecta `[Grabbed inverso]` |
+| `Dead = true` y `Health = 0` (cadaver) | detecta y controla |
+| Sin `Grabbed` ni weld | rechaza con motivo en HUD y consola |
+
+### Modo servidor (Studio)
+
+- Pose activa, atributos `SpideyPoseyendo` / `SpideyPoseidoPor` correctos.
+- Weld del juego **desactivado** durante la posesion y reactivado con Z.
+- Cuerpo original a **-13.00 studs** exactos, anclado, **NOCLIP 47/47 partes**.
+- Movimiento por CFrame: **30.7 studs en 2 s** con el herido en `PlatformStand`.
+- Soltar la carga (weld destruido + `Grabbed = nil`): la posesion **termina
+  sola** (`ya no es valido`), jugador arriba y colision restaurada.
+- Z: termina la posesion y **sigues cargando** (weld `Enabled = true`).
+
+### Modo local / executor (simulado con copia LOCALTEST)
+
+- Deteccion `[Grabbed + weld]`, camara sobre el herido, weld apagado.
+- Cuerpo original a **-13.00 studs**, **NOCLIP 50/50 partes**.
+- Movimiento **-32.0 studs en 2 s**.
+- Soltar la carga: termina sola, jugador arriba.
+- Z: weld reenganchado (`Enabled = true`) y `Grabbed` intacto.
+- Sin senales: `[Spidey V13.5] no se detecto carga: sin Grabbed y sin un
+  cuerpo agarrado cerca`.
+
+Nota: el fallback por network owner solo funciona donde la API
+`GetNetworkOwner` esta disponible (servidor); en el cliente las senales que
+importan son `Grabbed`, `Grabbed` inverso y el weld, que si se replican.

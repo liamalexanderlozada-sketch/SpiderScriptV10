@@ -1,8 +1,26 @@
 --[[
-	SPIDER V13.4 · TODO EL SISTEMA EN UN SOLO SCRIPT COMBINADO
+	SPIDER V13.5 · TODO EL SISTEMA EN UN SOLO SCRIPT COMBINADO
 	Servidor + Cliente en el mismo archivo. Se adapta solo.
 
-	LO NUEVO DE V13.4 (posesion real del cuerpo cargado):
+	LO NUEVO DE V13.5 (deteccion permisiva del agarre de la pierna):
+	  En el Da Hood real el cuerpo que cargas puede llegar con
+	  Dead = true o Health = 0 (es un cadaver) y el weld puede
+	  tardar en replicarse. V13.4 rechazaba eso y por eso decia
+	  "No estas cargando a nadie". V13.5 acepta CUALQUIERA de las
+	  senales reales del juego: Grabbed del que carga, Grabbed
+	  inverso (CarrySystem), weld GRABBING_CONSTRAINT en cualquier
+	  direccion, o network owner del que carga (el Helper te da la
+	  propiedad de red de todas las partes del herido). Si aun asi
+	  no detecta, el HUD dice el MOTIVO exacto (sin Grabbed, sin
+	  weld, lo carga otro, etc.) y la consola imprime
+	  [Spidey V13.5] para revisarlo en F9.
+	  Tambien: mientras controlas, si el juego vuelve a crear el
+	  weld de carga se apaga solo para que no arrastre al herido,
+	  y tu cuerpo original ahora tiene NOCLIP (atraviesa el piso y
+	  las paredes 13 studs mas abajo, mirando arriba, totalmente
+	  tieso).
+
+	LO NUEVO DE V13.5 (posesion real del cuerpo cargado):
 	  Derriban a alguien y lo cargas con el sistema de carga del
 	  juego. Equipa el tool Control (lo entrega este script junto
 	  con Spider) y hazle clic. Si estas cargando de verdad, tu
@@ -16,7 +34,7 @@
 	  Ya no usa G y ya no crea muñecos ni clones para fingir el
 	  control.
 
-	EL HERIDO SIGUE SIENDO UN CADAVER (V13.3 y V13.4):
+	EL HERIDO SIGUE SIENDO UN CADAVER (V13.3 y V13.5):
 	  El herido NO se pone de pie. Sigue tirado e inmovilizado y
 	  solo hace sus propias animaciones de caminar, correr y
 	  saltar mientras tu lo controlas. Si el tiene animaciones de
@@ -25,7 +43,7 @@
 	  Shift = correr, Espacio = saltar. G suelta la carga del juego
 	  y te devuelve arriba automaticamente.
 
-	V13.4 (modo con servidor):
+	V13.5 (modo con servidor):
 	  El servidor hace exactamente lo mismo que el modo local:
 	  mantiene al herido tirado (PlatformStand, AutoRotate false,
 	  WalkSpeed 0), lo mueve por CFrame y usa sus animaciones
@@ -139,6 +157,82 @@
 	  probar el aim sin mover el mouse). "UNLOCK" lo quita.
 	  "POSE" hace lo mismo que el clic del tool Control.
 ]]
+
+--=================================================================
+-- UTILIDADES COMPARTIDAS (servidor y cliente): deteccion del agarre
+-- real de Da Hood. Van ANTES del if IsServer para que las dos mitades
+-- del archivo las vean.
+--=================================================================
+local function valorBody(modelo, nombre)
+	local be = modelo and modelo:FindFirstChild("BodyEffects")
+	return be and be:FindFirstChild(nombre)
+end
+
+-- V13.5: busca el weld de carga entre dos personajes sin importar en cual
+-- de los dos esta parentado ni el orden de Part0/Part1. Da Hood lo crea en
+-- la victima, pero algunas variantes lo crean en el que carga.
+local function weldCargaEntre(a, b)
+	if not a or not b or not a.Parent or not b.Parent then return nil end
+	for _, contenedor in ipairs({ a, b }) do
+		for _, obj in ipairs(contenedor:GetChildren()) do
+			if obj.Name == "GRABBING_CONSTRAINT" and obj:IsA("JointInstance") then
+				local p0, p1 = obj.Part0, obj.Part1
+				if p0 and p1 then
+					local cruza = (p0:IsDescendantOf(a) and p1:IsDescendantOf(b))
+						or (p1:IsDescendantOf(a) and p0:IsDescendantOf(b))
+					if cruza then return obj end
+				end
+			end
+		end
+	end
+	return nil
+end
+
+-- Cualquier weld GRABBING_CONSTRAINT que exista en el controlador o en la
+-- victima, aunque este desactivado. Sirve para apagar los que el juego
+-- recree durante la posesion.
+local function weldsCargaDe(controlador, victima)
+	local lista, vistos = {}, {}
+	for _, contenedor in ipairs({ controlador, victima }) do
+		if contenedor and contenedor.Parent then
+			for _, obj in ipairs(contenedor:GetChildren()) do
+				if obj.Name == "GRABBING_CONSTRAINT" and obj:IsA("JointInstance") and not vistos[obj] then
+					vistos[obj] = true
+					table.insert(lista, obj)
+				end
+			end
+		end
+	end
+	return lista
+end
+
+-- Apaga cualquier weld de carga que aparezca durante la posesion. El
+-- cuerpo se mueve por CFrame; si el weld sigue activo, el juego tiraria
+-- del cuerpo hacia el jugador original.
+local function apagarWeldsCarga(controlador, victima, datos)
+	if not datos then return end
+	datos.weldsExtra = datos.weldsExtra or {}
+	for _, w in ipairs(weldsCargaDe(controlador, victima)) do
+		if w.Enabled then w.Enabled = false end
+		if not table.find(datos.weldsExtra, w) then
+			table.insert(datos.weldsExtra, w)
+		end
+	end
+end
+
+-- El Helper pone todas las partes de la victima con network owner del que
+-- la carga. Es una prueba fuerte de agarre aunque el weld no haya
+-- replicado todavia al cliente.
+local function esDuenoRedDe(modelo, dueno)
+	if not modelo or not modelo.Parent or not dueno then return false end
+	for _, p in ipairs(modelo:GetDescendants()) do
+		if p:IsA("BasePart") then
+			local ok, actual = pcall(function() return p:GetNetworkOwner() end)
+			if ok and actual == dueno then return true end
+		end
+	end
+	return false
+end
 
 if game:GetService("RunService"):IsServer() then
 --=================================================================
@@ -364,7 +458,7 @@ end)
 -- StarterPlayer.StarterPlayerScripts.SpideyClienteV11 (LocalScript).
 -- Un Script de servidor no puede crear codigo cliente en runtime.
 if not game:GetService("StarterPlayer").StarterPlayerScripts:FindFirstChild("SpideyClienteV11") then
-	warn("[Spidey V13.4] Falta el LocalScript SpideyClienteV11 (pegar este mismo archivo en StarterPlayerScripts)")
+	warn("[Spidey V13.5] Falta el LocalScript SpideyClienteV11 (pegar este mismo archivo en StarterPlayerScripts)")
 end
 
 local CFG = {
@@ -607,7 +701,7 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 -----------------------------------------------------------------
--- V13.4 · POSESION REAL DEL CUERPO CARGADO (tool Control)
+-- V13.5 · POSESION REAL DEL CUERPO CARGADO (tool Control)
 -- Ya NO se crea un muñeco nuevo. La posesion se activa SOLO si ya
 -- estas cargando a un cuerpo derribado con el sistema de carga del
 -- juego (GRABBING_CONSTRAINT + BodyEffects.Grabbed). El cuerpo
@@ -641,43 +735,26 @@ local function hrpDe(modelo)
 	return modelo and modelo:FindFirstChild("HumanoidRootPart")
 end
 
--- Cargando de verdad = el Grabbed del que carga apunta al herido y
--- existe el weld real del juego. El agarre por la pierna no escribe
--- Grabbed en la victima. No basta con estar cerca del cuerpo.
+-- V13.5: cargar de verdad = CUALQUIERA de las senales reales del juego:
+-- Grabbed del que carga, Grabbed inverso (CarrySystem), weld
+-- GRABBING_CONSTRAINT en cualquier direccion, o network owner del que
+-- carga. No se exige el weld porque puede tardar en replicar y no se
+-- exige Dead=false/Health>0: el cuerpo puede ser un cadaver y seguir
+-- cargado. Tampoco basta con estar cerca: hace falta una senal.
 local function estaCargandoA(pl, victima)
 	local c = pl and pl.Character
 	if not c or not victima or not victima.Parent then return false end
 
-	local g1 = valorBody(c, "Grabbed")
-	if not g1 then return false end
-	-- En Da Hood: g1.Value = Player victima. En el agarre por la pierna
-	-- clasico: el Model del cuerpo. Aceptamos ambos.
-	if personajeDe(g1.Value) ~= victima then return false end
+	local agarrado = personajeDe(valorBody(c, "Grabbed") and valorBody(c, "Grabbed").Value) == victima
+	local inverso = personajeDe(valorBody(victima, "Grabbed") and valorBody(victima, "Grabbed").Value) == c
+	local conWeld = weldCargaEntre(c, victima) ~= nil
+	local conRed = esDuenoRedDe(victima, pl)
 
-	-- La prueba fuerte es el weld real del juego: una parte del que carga
-	-- unida al HumanoidRootPart de la victima. El agarre por la pierna
-	-- NO escribe BodyEffects.Grabbed en la victima, asi que no lo exigimos.
-	local cw = victima:FindFirstChild("GRABBING_CONSTRAINT")
-	if not cw or not cw:IsA("JointInstance") then return false end
-	local p0, p1 = cw.Part0, cw.Part1
-	if not p0 or not p1 then return false end
-	if not p0:IsDescendantOf(c) or not p1:IsDescendantOf(victima) then return false end
-
-	local g2 = valorBody(victima, "Grabbed")
-	if g2 then
-		local otro = personajeDe(g2.Value)
-		if otro and otro ~= c then return false end
-	end
+	if not (agarrado or inverso or conWeld or conRed) then return false end
 
 	local vh = humDe(victima)
 	local ch = humDe(c)
 	if not vh or not ch or ch.Health <= 0 then return false end
-
-	-- Un herido en K.O. puede tener Health = 0 y seguir sin estar muerto.
-	-- La fuente fiable es BodyEffects.Dead.
-	local dead = valorBody(victima, "Dead")
-	if dead and dead.Value == true then return false end
-	if not dead and vh.Health <= 0 then return false end
 
 	return true
 end
@@ -685,7 +762,7 @@ end
 -----------------------------------------------------------------
 -- Guardar / preparar / restaurar el cuerpo real
 -----------------------------------------------------------------
-local function guardarVictima(victima)
+local function guardarVictima(victima, controlador)
 	local vh = humDe(victima)
 	local vr = hrpDe(victima)
 	local d = {
@@ -730,7 +807,7 @@ local function guardarVictima(victima)
 		end
 	end
 
-	local cw = victima:FindFirstChild("GRABBING_CONSTRAINT")
+	local cw = weldCargaEntre(controlador, victima)
 	if cw then
 		d.carry = { c = cw, e = cw.Enabled, p0 = cw.Part0, p1 = cw.Part1 }
 		if cw:IsA("Weld") then
@@ -764,7 +841,7 @@ local function prepararVictima(d)
 		if item.p and item.p.Parent then item.p.Massless = false end
 	end
 
-	-- V13.4: el herido sigue siendo un cadaver. No se levanta.
+	-- V13.5: el herido sigue siendo un cadaver. No se levanta.
 	if d.animate and d.animate.Parent then
 		d.animate.Enabled = false
 	end
@@ -942,7 +1019,10 @@ local function restaurarVictima(e)
 	-- victima y por eso SI se restaura la carga.
 	local cbe = e.datosG and e.datosG.char and e.datosG.char:FindFirstChild("BodyEffects")
 	local g = cbe and cbe:FindFirstChild("Grabbed")
-	local sigueCargando = g and personajeDe(g.Value) == victima
+	local vg = valorBody(victima, "Grabbed")
+	local sigueCargando = (g and personajeDe(g.Value) == victima)
+		or (vg and personajeDe(vg.Value) == e.controlador)
+		or (weldCargaEntre(e.controlador, victima) ~= nil)
 
 	local carry = d.carry
 	if carry and carry.c and carry.c.Parent then
@@ -956,8 +1036,13 @@ local function restaurarVictima(e)
 			carry.c.C1 = carry.c1
 		end
 	end
+	-- V13.5: los welds que el juego recreo durante la posesion tambien
+	-- vuelven a activarse si seguimos cargando.
+	for _, w in ipairs(d.weldsExtra or {}) do
+		if w and w.Parent then w.Enabled = sigueCargando == true end
+	end
 
-	-- V13.4: se reactiva el Animate propio del herido al desposeer.
+	-- V13.5: se reactiva el Animate propio del herido al desposeer.
 	if d.animate and d.animate.Parent then
 		d.animate.Enabled = d.animateEnabled
 	end
@@ -1008,6 +1093,14 @@ local function seguirBajoControlador(e)
 	if forward.Magnitude < 0.01 then forward = Vector3.zAxis else forward = forward.Unit end
 	d.hrp.CFrame = CFrame.lookAt(abajo, abajo + Vector3.yAxis, forward)
 	d.hrp.Anchored = true
+	-- V13.5 NOCLIP: el cuerpo original atraviesa el piso y las paredes
+	-- para que nunca se note ni se atasque. El Humanoid puede reactivar
+	-- la colision de los miembros, asi que se refuerza cada fotograma.
+	for _, item in ipairs(d.partes or {}) do
+		if item.p and item.p.Parent and item.p.CanCollide then
+			item.p.CanCollide = false
+		end
+	end
 end
 
 local function guardarControlador(pl)
@@ -1015,6 +1108,12 @@ local function guardarControlador(pl)
 	local h = humDe(c)
 	local r = hrpDe(c)
 	if not c or not h or not r then return nil end
+	local partes = {}
+	for _, p in ipairs(c:GetDescendants()) do
+		if p:IsA("BasePart") then
+			table.insert(partes, { p = p, cc = p.CanCollide })
+		end
+	end
 	return {
 		char = c,
 		hum = h,
@@ -1026,6 +1125,7 @@ local function guardarControlador(pl)
 		use = h.UseJumpPower,
 		platform = h.PlatformStand,
 		auto = h.AutoRotate,
+		partes = partes,
 	}
 end
 
@@ -1068,6 +1168,12 @@ local function restaurarControlador(e)
 	d.hum.UseJumpPower = d.use
 	d.hum.PlatformStand = d.platform
 	d.hum.AutoRotate = d.auto
+	-- V13.5: se devuelve la colision original del cuerpo del jugador.
+	for _, item in ipairs(d.partes or {}) do
+		if item.p and item.p.Parent then
+			item.p.CanCollide = item.cc
+		end
+	end
 	if not d.anclado then
 		pcall(function() d.hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
 	end
@@ -1100,7 +1206,31 @@ local function limpiarPoseyendo(pl, motivo)
 	restaurarControlador(e)
 	restaurarVictima(e)
 	RE_Cuerpo:FireClient(pl, "POSE_STOP", motivo)
-	print("[Spidey V13.4] posesion terminada: " .. tostring(e.victima and e.victima.Name) .. " (" .. tostring(motivo or "manual") .. ")")
+	print("[Spidey V13.5] posesion terminada: " .. tostring(e.victima and e.victima.Name) .. " (" .. tostring(motivo or "manual") .. ")")
+end
+
+local function resolverVictimaCarga(pl)
+	local c = pl and pl.Character
+	if not c then return nil end
+
+	-- 1) Grabbed del que carga (Helper y CarrySystem lo escriben).
+	local g = valorBody(c, "Grabbed")
+	local victima = personajeDe(g and g.Value)
+	if victima and victima.Parent and victima ~= c then return victima end
+
+	-- 2) Grabbed inverso o weld real en cualquier cuerpo del workspace.
+	-- Cubre el caso en que el Grabbed del que carga no exista.
+	for _, modelo in ipairs(workspace:GetChildren()) do
+		if modelo:IsA("Model") and modelo ~= c and modelo.Parent then
+			local vg = valorBody(modelo, "Grabbed")
+			if vg then
+				local apunta = personajeDe(vg.Value)
+				if apunta == c then return modelo end
+			end
+			if weldCargaEntre(c, modelo) then return modelo end
+		end
+	end
+	return nil
 end
 
 local function iniciarPoseyendo(pl)
@@ -1113,10 +1243,9 @@ local function iniciarPoseyendo(pl)
 		return false
 	end
 
-	local be = c and c:FindFirstChild("BodyEffects")
-	local g = be and be:FindFirstChild("Grabbed")
-	-- El juego puede guardar un Player o directamente el Model.
-	local victima = personajeDe(g and g.Value)
+	-- V13.5: la victima se resuelve con cualquiera de las senales reales
+	-- (Grabbed propio, Grabbed inverso o weld), no solo con Grabbed.
+	local victima = resolverVictimaCarga(pl)
 	if not victima or not victima.Parent then
 		RE_Cuerpo:FireClient(pl, "POSE_NO", "No estas cargando a nadie")
 		return false
@@ -1154,7 +1283,7 @@ local function iniciarPoseyendo(pl)
 		return false
 	end
 
-	e.datosV = guardarVictima(victima)
+	e.datosV = guardarVictima(victima, pl)
 	prepararVictima(e.datosV)
 	prepararAnimacionesServer(e)
 	ocultarControlador(e)
@@ -1165,7 +1294,7 @@ local function iniciarPoseyendo(pl)
 	pl:SetAttribute("SpideyPoseyendo", victima.Name)
 	victima:SetAttribute("SpideyPoseidoPor", pl.Name)
 	RE_Cuerpo:FireClient(pl, "POSE_START", victima)
-	print("[Spidey V13.4] posesion real: " .. victima.Name .. " (por " .. pl.Name .. ")")
+	print("[Spidey V13.5] posesion real: " .. victima.Name .. " (por " .. pl.Name .. ")")
 	return true
 end
 
@@ -1198,7 +1327,11 @@ RunService.Heartbeat:Connect(function()
 		if not ok or victimaNaceOtra then
 			limpiarPoseyendo(pl, victimaNaceOtra and "la victima respawneo" or "ya no es valido")
 		else
-			-- V13.4: el herido NO se levanta. Se mueve por CFrame como un
+			-- V13.5: si el juego vuelve a crear el weld de carga mientras
+			-- controlamos, se apaga para que no arrastre al herido.
+			apagarWeldsCarga(e.controlador, e.victima, e.datosV)
+
+			-- V13.5: el herido NO se levanta. Se mueve por CFrame como un
 			-- cadaver inmovilizado y hace sus propias animaciones.
 			local vh = e.victimaHum
 			local vr = e.victimaHRP
@@ -1267,9 +1400,9 @@ _G.SpideyV13Servidor = {
 	end,
 }
 
-print("[Spidey V13.4] servidor listo: tool Control posee el cuerpo que estas cargando")
+print("[Spidey V13.5] servidor listo: tool Control posee el cuerpo que estas cargando")
 
-print("[Spidey V13.4] Servidor listo; valida telaranas y difunde animaciones por RE_Anim")
+print("[Spidey V13.5] Servidor listo; valida telaranas y difunde animaciones por RE_Anim")
 
 else
 --=================================================================
@@ -1278,7 +1411,7 @@ else
 -- Candado: si otra copia de este script ya corre en este cliente, sale.
 if _G.__SPIDEY_V11_ACTIVO then return end
 _G.__SPIDEY_V11_ACTIVO = true
-print("[Spidey V13.4] cargando...")
+print("[Spidey V13.5] cargando...")
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -1303,7 +1436,7 @@ end
 RE = RS:FindFirstChild("SpideyRemotos")
 if not RE then
 	sinServidor = true
-	print("[Spidey V13.4] sin servidor: MODO UNIVERSAL (giros visibles para todos por fisica)")
+	print("[Spidey V13.5] sin servidor: MODO UNIVERSAL (giros visibles para todos por fisica)")
 	RE = Instance.new("Folder")
 	RE.Name = "SpideyRemotos"
 	RE.Parent = RS
@@ -2435,7 +2568,7 @@ local function probarAnimaciones()
 					end
 					if track.Length > 0 then
 						tracksVisibles[nombre] = track
-						print(string.format("[Spidey V13.4] %s visible para TODOS (id %d, %.2fs)", nombre, id, track.Length))
+						print(string.format("[Spidey V13.5] %s visible para TODOS (id %d, %.2fs)", nombre, id, track.Length))
 						break
 					else
 						pcall(function() track:Destroy() end)
@@ -2443,7 +2576,7 @@ local function probarAnimaciones()
 				end
 			end
 			if not tracksVisibles[nombre] and candidatosAnim(nombre)[1] then
-				print("[Spidey V13.4] " .. nombre .. ": ninguna animacion visible carga en este juego (queda la fisica/poses locales)")
+				print("[Spidey V13.5] " .. nombre .. ": ninguna animacion visible carga en este juego (queda la fisica/poses locales)")
 			end
 		end
 		animProbandose = false
@@ -2823,7 +2956,7 @@ local poseyendoVictima = nil
 local poseyendoDatos = nil
 local function bucle(dt)
 	if not hrp or not hum then return end
-	-- V13.4: mientras controlas otro cuerpo, tu avatar queda quieto
+	-- V13.5: mientras controlas otro cuerpo, tu avatar queda quieto
 	-- debajo del mapa; no ejecutes telarana/poses en el.
 	if poseyendo then return end
 
@@ -3295,7 +3428,7 @@ local function alNacer(c)
 	task.wait(1)
 	if player.Character == c then
 		crearGUI()
-		print("[Spidey V13.4] cliente listo | rig=" .. tostring(Pose.Tipo(char)) .. " | A/B procedurales")
+		print("[Spidey V13.5] cliente listo | rig=" .. tostring(Pose.Tipo(char)) .. " | A/B procedurales")
 	end
 end
 
@@ -3312,7 +3445,7 @@ end
 
 RunService.Heartbeat:Connect(bucle)
 -----------------------------------------------------------------
--- V13.4 · POSESION REAL (tool Control), LOCK (Q) y ESP (J)
+-- V13.5 · POSESION REAL (tool Control), LOCK (Q) y ESP (J)
 -- El control ya no usa G ni crea clones: se activa con el tool
 -- Control SOLO cuando ya estas cargando a un cuerpo derribado.
 -----------------------------------------------------------------
@@ -3384,42 +3517,107 @@ local function personajeDe(valor)
 	return nil
 end
 
--- Comprueba que ESTAS CARGANDO a ese cuerpo con el sistema del juego:
--- Grabbed del que carga + GRABBING_CONSTRAINT real en la victima.
-local function detectarCarga()
-	if not char or not char.Parent then return nil end
-	local be = char:FindFirstChild("BodyEffects")
-	local g = be and be:FindFirstChild("Grabbed")
-	local victima = personajeDe(g and g.Value)
-	if not victima or not victima.Parent then return nil end
+-- V13.5: comprueba que ESTAS CARGANDO a ese cuerpo con cualquiera de las
+-- senales reales del juego. En el juego real el cuerpo puede estar
+-- Dead=true / Health=0 (es un cadaver) y el weld puede tardar en
+-- replicarse, asi que ninguna de las dos cosas bloquea la deteccion.
+local function senalesCarga(victima)
+	local senales = {}
 
-	-- El agarre por la pierna clasico NO escribe Grabbed en la victima.
-	-- Si existe, debe apuntar a nosotros; si no existe, seguimos.
-	local vbe = victima:FindFirstChild("BodyEffects")
-	local vg = vbe and vbe:FindFirstChild("Grabbed")
-	if vg then
-		local otro = personajeDe(vg.Value)
-		if otro and otro ~= char then return nil end
+	local g = valorBody(char, "Grabbed")
+	if personajeDe(g and g.Value) == victima then
+		table.insert(senales, "Grabbed")
 	end
 
-	-- Verdadera prueba: el weld del juego con una parte nuestra y el
-	-- HumanoidRootPart de la victima.
-	local cw = victima:FindFirstChild("GRABBING_CONSTRAINT")
-	if not cw or not cw:IsA("JointInstance") then return nil end
-	local p0, p1 = cw.Part0, cw.Part1
-	if not p0 or not p1 then return nil end
-	if not p0:IsDescendantOf(char) or not p1:IsDescendantOf(victima) then return nil end
+	local vg = valorBody(victima, "Grabbed")
+	local vgv = personajeDe(vg and vg.Value)
+	if vgv == char then
+		table.insert(senales, "Grabbed inverso")
+	end
 
-	local vh = victima:FindFirstChildOfClass("Humanoid")
-	local vr = victima:FindFirstChild("HumanoidRootPart")
-	if not vh or not vr then return nil end
+	if weldCargaEntre(char, victima) then
+		table.insert(senales, "weld")
+	end
 
-	-- K.O. puede dejar Health = 0 sin que el cuerpo este muerto.
-	local dead = vbe and vbe:FindFirstChild("Dead")
-	if dead and dead.Value == true then return nil end
-	if not dead and vh.Health <= 0 then return nil end
+	return senales, vgv
+end
 
-	return victima
+local function victimaCerca(victima)
+	local a = char and char:FindFirstChild("HumanoidRootPart")
+	local b = victima and victima:FindFirstChild("HumanoidRootPart")
+	if not a or not b then return false end
+	return (a.Position - b.Position).Magnitude <= 16
+end
+
+local function detectarCarga()
+	if not char or not char.Parent then return nil, "sin personaje" end
+	local hrpPropio = char:FindFirstChild("HumanoidRootPart")
+	if not hrpPropio then return nil, "sin HumanoidRootPart" end
+
+	local candidatos, vistos = {}, {}
+	local function agregar(modelo)
+		if modelo and modelo.Parent and modelo ~= char and not vistos[modelo] then
+			vistos[modelo] = true
+			table.insert(candidatos, modelo)
+		end
+	end
+
+	-- 1) Grabbed del que carga (Helper y CarrySystem).
+	local g = valorBody(char, "Grabbed")
+	local delGrabbed = personajeDe(g and g.Value)
+	agregar(delGrabbed)
+
+	-- 2) Cuerpos cercanos con Grabbed inverso o weld real. Cubre el caso
+	-- en que el Grabbed del que carga todavia no ha replicado.
+	for _, modelo in ipairs(workspace:GetChildren()) do
+		if modelo:IsA("Model") and modelo ~= char then
+			local vh = modelo:FindFirstChildOfClass("Humanoid")
+			local vr = modelo:FindFirstChild("HumanoidRootPart")
+			if vh and vr and (vr.Position - hrpPropio.Position).Magnitude <= 18 then
+				local vg = valorBody(modelo, "Grabbed")
+				if personajeDe(vg and vg.Value) == char or weldCargaEntre(char, modelo) then
+					agregar(modelo)
+				end
+			end
+		end
+	end
+
+	if #candidatos == 0 then
+		if g and g.Value ~= nil and not delGrabbed then
+			return nil, "Grabbed apunta a un cuerpo que ya no existe"
+		end
+		return nil, "sin Grabbed y sin un cuerpo agarrado cerca"
+	end
+
+	local mejor, mejorSenales, motivoFallo
+	for _, victima in ipairs(candidatos) do
+		local vh = victima:FindFirstChildOfClass("Humanoid")
+		local vr = victima:FindFirstChild("HumanoidRootPart")
+		if not vh or not vr then
+			motivoFallo = motivoFallo or "el cuerpo no tiene Humanoid"
+		else
+			local senales, vgv = senalesCarga(victima)
+			if vgv and vgv ~= char and vgv ~= victima then
+				motivoFallo = motivoFallo or "el cuerpo lo carga otro jugador"
+			elseif #senales > 0 then
+				if not mejor or #senales > #mejorSenales then
+					mejor, mejorSenales = victima, senales
+				end
+			elseif victimaCerca(victima) and esDuenoRedDe(victima, player) then
+				-- Red de seguridad: el juego nos dio la propiedad de red
+				-- del cuerpo, asi que lo estamos cargando aunque el weld
+				-- no haya replicado todavia.
+				if not mejor then
+					mejor, mejorSenales = victima, { "network owner" }
+				end
+			else
+				motivoFallo = motivoFallo or "el cuerpo esta cerca pero sin agarre"
+			end
+		end
+	end
+
+	if not mejor then return nil, motivoFallo or "sin agarre real" end
+	return mejor, table.concat(mejorSenales, " + ")
 end
 
 local function toolControlEnMano()
@@ -3590,10 +3788,10 @@ function V11.AlternarESP()
 		for _, p in ipairs(Players:GetPlayers()) do
 			aplicarESPPJugador(p)
 		end
-		print("[Spidey V13.4] ESP ACTIVADO: contorno blanco + nombres (atraviesa paredes)")
+		print("[Spidey V13.5] ESP ACTIVADO: contorno blanco + nombres (atraviesa paredes)")
 		mostrarHUD("ESP ACTIVADO (J para apagar)")
 	else
-		print("[Spidey V13.4] ESP DESACTIVADO")
+		print("[Spidey V13.5] ESP DESACTIVADO")
 		mostrarHUD("ESP DESACTIVADO")
 	end
 	task.delay(2, function()
@@ -3821,7 +4019,7 @@ local function parchearGunHandler()
 	end
 	gunHandlerParcheado = true
 	gunHandlerParcheando = false
-	print("[Spidey V13.4] armas nuevas (Revolver/escopetas): getAim dirigido al lock")
+	print("[Spidey V13.5] armas nuevas (Revolver/escopetas): getAim dirigido al lock")
 	return true
 end
 -- El require de un modulo del juego puede CEDER (esperando el
@@ -3969,7 +4167,7 @@ local function bloquearModeloLock(modelo)
 	elseif b.enviarApuntado then
 		modo = "apuntado remoto"
 	end
-	print("[Spidey V13.4] lock: " .. nombre .. " (" .. modo .. ")")
+	print("[Spidey V13.5] lock: " .. nombre .. " (" .. modo .. ")")
 	return true
 end
 
@@ -4074,7 +4272,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -----------------------------------------------------------------
--- V13.4 · CONTROL REAL: entradas, camara y limpieza del cliente
+-- V13.5 · CONTROL REAL: entradas, camara y limpieza del cliente
 -- Con servidor: el servidor mueve el cuerpo real y anima. Este
 -- cliente solo manda WASD, pone la camara y muestra el HUD.
 -- Sin servidor: intento local directo (menos fiable, solo util si
@@ -4209,9 +4407,8 @@ arrancarPoseyendoLocal = function(victima, remoto)
 	local vr = victima:FindFirstChild("HumanoidRootPart")
 	local cam = workspace.CurrentCamera
 	if not vh or not vr or not cam then return false end
-	local dead = victima:FindFirstChild("BodyEffects") and victima.BodyEffects:FindFirstChild("Dead")
-	if dead and dead.Value == true then return false end
-	if not dead and vh.Health <= 0 then return false end
+	-- V13.5: NO se rechaza por Dead/Health. El herido que cargas puede
+	-- ser un cadaver (Dead=true o Health=0) y aun asi controlarse.
 
 	local datos = {
 		victima = victima,
@@ -4219,6 +4416,8 @@ arrancarPoseyendoLocal = function(victima, remoto)
 		victimaHRP = vr,
 		animActual = nil,
 		remoto = remoto == true,
+		inicioPose = os.clock(),
+		vioSenalReal = false,
 	}
 
 	if not datos.remoto then
@@ -4248,7 +4447,7 @@ arrancarPoseyendoLocal = function(victima, remoto)
 				table.insert(datos, { ncs = p, e = p.Enabled })
 			end
 		end
-		local cw = victima:FindFirstChild("GRABBING_CONSTRAINT")
+		local cw = weldCargaEntre(char, victima)
 		if cw then
 			datos.carry = { c = cw, e = cw.Enabled, p0 = cw.Part0, p1 = cw.Part1 }
 			if cw:IsA("Weld") then
@@ -4270,7 +4469,18 @@ arrancarPoseyendoLocal = function(victima, remoto)
 		auto = hum and hum.AutoRotate,
 		camSubject = cam.CameraSubject,
 		camType = cam.CameraType,
+		partes = {},
 	}
+	do
+		local c = char
+		if c then
+			for _, p in ipairs(c:GetDescendants()) do
+				if p:IsA("BasePart") then
+					table.insert(datos.propio.partes, { p = p, cc = p.CanCollide })
+				end
+			end
+		end
+	end
 
 	if not datos.remoto then
 		local cw = datos.carry and datos.carry.c
@@ -4317,7 +4527,7 @@ arrancarPoseyendoLocal = function(victima, remoto)
 
 	local nombre = victima.Name
 	mostrarHUD("CONTROLANDO: " .. nombre .. "   |   Z = desposeer (sigues cargando)")
-	print("[Spidey V13.4] controlando cuerpo real: " .. nombre .. " | Z = desposeer")
+	print("[Spidey V13.5] controlando cuerpo real: " .. nombre .. " | Z = desposeer")
 	if not datos.remoto then
 		seguirBajoMapa()
 	end
@@ -4383,12 +4593,23 @@ seguirBajoMapa = function()
 	if forward.Magnitude < 0.01 then forward = Vector3.zAxis else forward = forward.Unit end
 	hrp.CFrame = CFrame.lookAt(abajo, abajo + Vector3.yAxis, forward)
 	hrp.Anchored = true
+	-- V13.5 NOCLIP local: el cuerpo original atraviesa piso y paredes.
 	if hum then
 		hum.PlatformStand = true
 		hum.AutoRotate = false
 		hum.WalkSpeed = 0
 		hum.JumpPower = 0
 		hum.UseJumpPower = true
+	end
+	do
+		local partes = d.propio and d.propio.partes
+		if partes then
+			for _, item in ipairs(partes) do
+				if item.p and item.p.Parent and item.p.CanCollide then
+					item.p.CanCollide = false
+				end
+			end
+		end
 	end
 end
 
@@ -4412,7 +4633,10 @@ local function terminarPoseyendoInterno(motivo)
 		-- quedar desactivado; si seguimos cargando (Z), se reengancha.
 		local cbe = char and char:FindFirstChild("BodyEffects")
 		local g = cbe and cbe:FindFirstChild("Grabbed")
-		local sigueCargando = g and personajeDe(g.Value) == victima
+		local vg = victima and victima:FindFirstChild("BodyEffects") and victima.BodyEffects:FindFirstChild("Grabbed")
+		local sigueCargando = (g and personajeDe(g.Value) == victima)
+			or (vg and personajeDe(vg.Value) == char)
+			or (char and victima and weldCargaEntre(char, victima) ~= nil)
 		local carry = d.carry
 		if carry and carry.c and carry.c.Parent then
 			-- Se queda desactivado hasta que el jugador vuelva arriba.
@@ -4424,6 +4648,12 @@ local function terminarPoseyendoInterno(motivo)
 				carry.c.C0 = carry.c0
 				carry.c.C1 = carry.c1
 			end
+		end
+		-- V13.5: los welds recreados por el juego durante la posesion se
+		-- reactivan si seguimos cargando, o se dejan apagados si el juego
+		-- ya solto al herido.
+		for _, w in ipairs(d.weldsExtra or {}) do
+			if w and w.Parent then w.Enabled = sigueCargando == true end
 		end
 		if d.victimaAnimate and d.victimaAnimate.Parent then
 			d.victimaAnimate.Enabled = d.victimaAnimateEnabled
@@ -4487,6 +4717,12 @@ local function terminarPoseyendoInterno(motivo)
 					pcall(function() h:ChangeState(Enum.HumanoidStateType.GettingUp) end)
 				end
 			end
+			-- V13.5: se devuelve la colision original del cuerpo.
+			for _, item in ipairs(propio.partes or {}) do
+				if item.p and item.p.Parent then
+					item.p.CanCollide = item.cc
+				end
+			end
 		end
 
 		-- Recien ahora, con el jugador ya fuera de debajo del mapa,
@@ -4507,7 +4743,7 @@ local function terminarPoseyendoInterno(motivo)
 
 	player:SetAttribute("SpideyTestMove", nil)
 	mostrarHUD(nil)
-	print("[Spidey V13.4] posesion soltada (" .. tostring(motivo or "manual") .. ")")
+	print("[Spidey V13.5] posesion soltada (" .. tostring(motivo or "manual") .. ")")
 	return true
 end
 
@@ -4527,13 +4763,29 @@ local function validarPoseyendoActual()
 	local vr = d.victimaHRP
 	if not victima or not victima.Parent then return false, "el cuerpo desaparecio" end
 	if not vh or not vh.Parent or not vr or not vr.Parent then return false, "el cuerpo desaparecio" end
-	local dead = victima:FindFirstChild("BodyEffects") and victima.BodyEffects:FindFirstChild("Dead")
-	if dead and dead.Value == true then return false, "el cuerpo murio" end
-	if not dead and vh.Health <= 0 then return false, "el cuerpo murio" end
-	-- K.O. = true es normal: estas cargando a un herido derribado.
-	if not victima:FindFirstChild("GRABBING_CONSTRAINT") then return false, "ya no estas cargando" end
-	if detectarCarga() ~= victima then return false, "ya no estas cargando" end
-	return true
+	-- V13.5: Dead=true y Health=0 NO terminan la posesion. El herido es
+	-- un cadaver y el juego puede marcarlo como muerto mientras lo cargas.
+
+	-- La posesion sigue mientras exista CUALQUIERA de las senales reales.
+	-- El weld puede estar desactivado a proposito: sigue existiendo y el
+	-- juego solo lo destruye cuando suelta al herido.
+	local g = valorBody(char, "Grabbed")
+	local vg = valorBody(victima, "Grabbed")
+	local conSenal = personajeDe(g and g.Value) == victima
+		or personajeDe(vg and vg.Value) == char
+		or (weldCargaEntre(char, victima) ~= nil)
+	if conSenal then
+		d.vioSenalReal = true
+		return true
+	end
+
+	-- Si la posesion arranco solo con network owner (el weld aun no habia
+	-- replicado), damos 5 s a que aparezca una senal real. Si el juego
+	-- suelta al herido, se termina sola.
+	if not d.vioSenalReal and (os.clock() - (d.inicioPose or 0)) < 5 then
+		if esDuenoRedDe(victima, player) then return true end
+	end
+	return false, "ya no estas cargando"
 end
 
 local function actualizarPoseyendoLocal()
@@ -4559,6 +4811,10 @@ local function actualizarPoseyendoLocal()
 	else
 		local vh = d.victimaHum
 		local vr = d.victimaHRP
+
+		-- V13.5: el juego puede recrear el weld mientras controlamos.
+		-- Se apaga en cada actualizacion para que no arrastre al herido.
+		apagarWeldsCarga(char, d.victima, d)
 
 		vh.PlatformStand = true
 		vh.AutoRotate = false
@@ -4606,13 +4862,13 @@ intentarPoseyendo = function()
 		return false
 	end
 
-	local victima = detectarCarga()
+	local victima, motivo = detectarCarga()
 	if not victima then
-		-- El juego escribe Grabbed antes de crear/replicar el weld. Si
-		-- el clic fue inmediato, esperar hasta 0.6 s a que aparezca.
-		for _ = 1, 12 do
+		-- El juego escribe Grabbed/weld de forma asincrona. Si el clic fue
+		-- inmediato, esperar hasta 1.2 s a que aparezca la senal real.
+		for _ = 1, 24 do
 			task.wait(0.05)
-			victima = detectarCarga()
+			victima, motivo = detectarCarga()
 			if victima then break end
 		end
 	end
@@ -4623,12 +4879,15 @@ intentarPoseyendo = function()
 			RE_Cuerpo:FireServer("POSE_START")
 			return true
 		end
-		mostrarHUD("No estas cargando a nadie")
+		print("[Spidey V13.5] no se detecto carga: " .. tostring(motivo))
+		mostrarHUD("No estas cargando a nadie (" .. tostring(motivo) .. ")")
 		task.delay(1.5, function()
 			if not poseyendo then mostrarHUD(nil) end
 		end)
 		return false
 	end
+
+	print("[Spidey V13.5] carga detectada: " .. victima.Name .. " [" .. tostring(motivo) .. "]")
 
 	if not sinServidor then
 		RE_Cuerpo:FireServer("POSE_START")
@@ -4657,7 +4916,7 @@ RE_Cuerpo.OnClientEvent:Connect(function(accion, a, b)
 			if not poseyendo then mostrarHUD(nil) end
 		end)
 	elseif accion == "POSE_STOP" then
-		terminarPoseyendoLocal(tostring(b or "servidor"), false)
+		terminarPoseyendoLocal(tostring(a or "servidor"), false)
 	end
 end)
 
