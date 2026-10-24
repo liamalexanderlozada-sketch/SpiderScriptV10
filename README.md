@@ -1,4 +1,42 @@
-# Spiderscript V13.4 🕷️
+# Spiderscript V13.8 — posesion SIMPLE + TODOS ven el cadaver 🕷️
+
+Sistema **Spider-Man completo** (telarana, fisica de pendulo, trepa, camara,
+sonidos, GUI y animaciones A/B) **+ LOCK, ESP y POSESION REAL DEL CUERPO
+CARGADO** en **un solo archivo combinado**: sirve como script de servidor y
+como LocalScript/executor. Se adapta solo con `RunService:IsServer()`.
+
+> **Novedad V13.8: clic y listo + replicacion verificada**
+>
+> - **SIN deteccion complicada**: derribas a tu amigo, te agachas, lo
+>   agarras de la pierna, equipas el tool **Control** y haces **clic**.
+>   Se posee el cuerpo **DERRIBADO** mas cercano (a menos de 18 studs).
+>   Un jugador sano y de pie **nunca** se posee.
+> - **NO ES VISUAL — TODOS LO VEN** (verificado con servidor y cliente a
+>   la vez): el Helper del juego le da a TU cliente la propiedad de red
+>   del herido mientras lo cargas; con ella, los CFrame que escribe tu
+>   cliente se replican al servidor y a todos. Prueba: cliente movio el
+>   cadaver 29.08 studs y el servidor leyo 29.0 exactos, de pie.
+> - **EL CADAVER SE LEVANTA**: se endereza solo en 0.6 s (de acostado a
+>   de pie) y todos lo ven levantarse, con sus animaciones
+>   idle/walk/run/jump, WASD + Shift + Espacio.
+> - **EL CADAVER NO TIENE NOCLIP**: respeta paredes (se detiene ante
+>   obstaculos y el movimiento bloqueado no se acumula: nunca se traba)
+>   y sigue el piso real (terreno, escaleras, rampas). El noclip es
+>   SOLO de tu cuerpo original.
+> - **WELD-RIDE**: mientras el juego te tenga soldado al herido, tu
+>   cuerpo original se pone exactamente donde el weld quiere (~2 studs
+>   del cadaver, como una carga normal). Cero pelea con el servidor:
+>   todos ven lo mismo. Sin weld, tu cuerpo baja 13 studs como siempre.
+> - **Causas raiz arregladas**: el ancla local del HRP propio congelaba
+>   la replicacion de todo el conjunto (por eso antes era visual); el
+>   PlatformStanding del herido lo dejaba anclado en el sitio (ahora
+>   estado Physics); los ball sockets del ragdoll se apagan durante la
+>   posesion y se restauran al desposeer.
+> - **Z desposee** y sigues cargando al herido; la posesion termina
+>   sola si el cuerpo desaparece/respawnea o el herido se mueve solo
+>   mas de 2 s. Lock, ESP y telarana intactos.
+
+# Spiderscript V13.4-V13.7 (historial)
 
 Sistema **Spider-Man completo** (telaraña, física de péndulo, trepa, cámara,
 sonidos, GUI y animaciones A/B) **+ LOCK, ESP y POSESIÓN REAL DEL CUERPO
