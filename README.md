@@ -1,10 +1,19 @@
-# Spiderscript V13.0 🕷️
+# Spiderscript V13.1 🕷️
 
 Sistema **Spider-Man completo** (telaraña, física de péndulo, trepa, cámara,
 sonidos, GUI y animaciones A/B) **+ LOCK, ESP y POSESIÓN REAL DEL CUERPO
 CARGADO** en **un solo archivo combinado**: sirve como script de servidor y
 como LocalScript/executor. Se adapta solo con `RunService:IsServer()`.
 
+> **Novedad V13.1: detección corregida del agarre por la pierna**
+> - El juego **no escribe** `BodyEffects.Grabbed` en la víctima cuando la
+>   cargas por la pierna. Antes se exigía y por eso decía "No estás cargando".
+> - Ahora se valida el weld real `GRABBING_CONSTRAINT`: `Part0` en el cuerpo
+>   que carga y `Part1` en el `HumanoidRootPart` del herido.
+> - Se aceptan las dos formas del juego: `Grabbed = Player` (CarrySystem) y
+>   `Grabbed = Model` (agarre clásico por la pierna).
+> - `K.O. = true` ya no corta la posesión: es normal en un herido derribado.
+>
 > **Novedad V13.0: poseer el cuerpo real que estás cargando por la pierna**
 > - Derriban a alguien y el juego te deja cargarlo por la pierna.
 > - Equipa el tool **Control** (lo entrega este script junto con `Spider`) y
@@ -45,17 +54,23 @@ Si tu ejecutor cachea la URL, usa la URL por commit:
 | **WASD** | Mueve el cuerpo real que estás poseyendo. |
 | **G** | Lo usa el sistema de carga del juego para **soltar** al herido. No se usa para desposeer. |
 
-## Cómo funciona la posesión (V13.0)
+## Cómo funciona la posesión (V13.1)
 
 ### 1. Requisitos para poseer
 
 El tool `Control` **no posee a cualquiera**. El servidor comprueba que exista
 una carga real:
 
-- `character.BodyEffects.Grabbed.Value == victima`
-- `victima.BodyEffects.Grabbed.Value == character`
-- existe `victima.GRABBING_CONSTRAINT` (el weld de carga del juego)
+- `character.BodyEffects.Grabbed.Value` apunta al herido (Player o Model)
+- existe `victima.GRABBING_CONSTRAINT` con `Part0` en el que carga y
+  `Part1` en el `HumanoidRootPart` del herido
+- si `victima.BodyEffects.Grabbed` existe, apunta al que carga; en el
+  agarre clásico por la pierna puede estar en `nil`, y eso es válido
 - el herido no está muerto y ambos Humanoid tienen vida
+- `K.O. = true` es normal y no cancela la posesión
+
+El K.O. del herido se conserva. La detección no lo usa para cancelar:
+antes se cortaba sola al empezar porque el cuerpo estaba K.O.
 
 Si falta cualquiera de esas cosas, el clic no hace nada y el HUD avisa. No
 basta con estar cerca ni con tener el tool equipado.
@@ -275,8 +290,8 @@ deseado, porque el hook ignora valores idénticos al anterior.
 - `Resources/Scripts/StarterPlayerScripts/SpideyClienteV11.lua` — copia para el
   LocalScript de StarterPlayerScripts.
 
-Los tres son **idénticos** al `SPIDER V13.0.lua` entregado.
+Los tres son **idénticos** al `SPIDER V13.1.lua` entregado.
 
-- Tamaño: **144.415 bytes**.
-- SHA256: `22EB363B86716F56EE672680DA4E2EE74D95DCEC5CC4A0DF37CEEE8711608F89`.
+- Tamaño: **146.753 bytes**.
+- SHA256: `C679706C397C4CEE4B0BF91DFB47FC4C8DCF9ADD62EC87A928CBFD1DD4D45DAC`.
 - Sintaxis validada con `luau-compile --only-parse` (exit 0).

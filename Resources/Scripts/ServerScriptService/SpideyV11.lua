@@ -1,8 +1,8 @@
 --[[
-	SPIDER V13.0 · TODO EL SISTEMA EN UN SOLO SCRIPT COMBINADO
+	SPIDER V13.1 · TODO EL SISTEMA EN UN SOLO SCRIPT COMBINADO
 	Servidor + Cliente en el mismo archivo. Se adapta solo.
 
-	LO NUEVO DE V13.0 (posesion real del cuerpo cargado):
+	LO NUEVO DE V13.1 (posesion real del cuerpo cargado):
 	  Derriban a alguien y lo cargas con el sistema de carga del
 	  juego. Equipa el tool Control (lo entrega este script junto
 	  con Spider) y hazle clic. Si estas cargando de verdad, tu
@@ -333,7 +333,7 @@ end)
 -- StarterPlayer.StarterPlayerScripts.SpideyClienteV11 (LocalScript).
 -- Un Script de servidor no puede crear codigo cliente en runtime.
 if not game:GetService("StarterPlayer").StarterPlayerScripts:FindFirstChild("SpideyClienteV11") then
-	warn("[Spidey V13.0] Falta el LocalScript SpideyClienteV11 (pegar este mismo archivo en StarterPlayerScripts)")
+	warn("[Spidey V13.1] Falta el LocalScript SpideyClienteV11 (pegar este mismo archivo en StarterPlayerScripts)")
 end
 
 local CFG = {
@@ -576,7 +576,7 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 -----------------------------------------------------------------
--- V13.0 · POSESION REAL DEL CUERPO CARGADO (tool Control)
+-- V13.1 · POSESION REAL DEL CUERPO CARGADO (tool Control)
 -- Ya NO se crea un muñeco nuevo. La posesion se activa SOLO si ya
 -- estas cargando a un cuerpo derribado con el sistema de carga del
 -- juego (GRABBING_CONSTRAINT + BodyEffects.Grabbed). El cuerpo
@@ -592,6 +592,16 @@ local function valorBody(modelo, nombre)
 	return be and be:FindFirstChild(nombre)
 end
 
+-- El juego guarda BodyEffects.Grabbed.Value como Player en el sistema
+-- de carga real (CarrySystem), pero otras variantes guardan el Model.
+-- Aceptamos las dos formas y devolvemos siempre el personaje (Model).
+local function personajeDe(valor)
+	if typeof(valor) ~= "Instance" then return nil end
+	if valor:IsA("Player") then return valor.Character end
+	if valor:IsA("Model") then return valor end
+	return nil
+end
+
 local function humDe(modelo)
 	return modelo and modelo:FindFirstChildOfClass("Humanoid")
 end
@@ -600,21 +610,33 @@ local function hrpDe(modelo)
 	return modelo and modelo:FindFirstChild("HumanoidRootPart")
 end
 
--- Cargando de verdad = el juego ya puso la conexion de carga y los
--- dos BodyEffects.Grabbed apuntan el uno al otro. No basta con estar
--- cerca del cuerpo.
+-- Cargando de verdad = el Grabbed del que carga apunta al herido y
+-- existe el weld real del juego. El agarre por la pierna no escribe
+-- Grabbed en la victima. No basta con estar cerca del cuerpo.
 local function estaCargandoA(pl, victima)
 	local c = pl and pl.Character
 	if not c or not victima or not victima.Parent then return false end
 
 	local g1 = valorBody(c, "Grabbed")
-	local g2 = valorBody(victima, "Grabbed")
-	if not g1 or not g2 then return false end
-	if g1.Value ~= victima then return false end
-	if g2.Value ~= c then return false end
+	if not g1 then return false end
+	-- En Da Hood: g1.Value = Player victima. En el agarre por la pierna
+	-- clasico: el Model del cuerpo. Aceptamos ambos.
+	if personajeDe(g1.Value) ~= victima then return false end
 
+	-- La prueba fuerte es el weld real del juego: una parte del que carga
+	-- unida al HumanoidRootPart de la victima. El agarre por la pierna
+	-- NO escribe BodyEffects.Grabbed en la victima, asi que no lo exigimos.
 	local cw = victima:FindFirstChild("GRABBING_CONSTRAINT")
-	if not cw then return false end
+	if not cw or not cw:IsA("JointInstance") then return false end
+	local p0, p1 = cw.Part0, cw.Part1
+	if not p0 or not p1 then return false end
+	if not p0:IsDescendantOf(c) or not p1:IsDescendantOf(victima) then return false end
+
+	local g2 = valorBody(victima, "Grabbed")
+	if g2 then
+		local otro = personajeDe(g2.Value)
+		if otro and otro ~= c then return false end
+	end
 
 	local vh = humDe(victima)
 	local ch = humDe(c)
@@ -691,11 +713,9 @@ local function prepararVictima(d)
 
 	local carry = d.carry
 	if carry and carry.c and carry.c.Parent then
+		-- Solo se desactiva. Se conservan Part0/Part1: son la prueba
+		-- de que el cuerpo sigue cargado y hacen falta para restaurar.
 		carry.c.Enabled = false
-		if carry.c:IsA("Weld") then
-			carry.c.Part0 = nil
-			carry.c.Part1 = nil
-		end
 	end
 	for _, item in ipairs(d.sockets) do
 		if item.c and item.c.Parent then item.c.Enabled = false end
@@ -835,9 +855,16 @@ local function restaurarVictima(e)
 	for _, item in ipairs(d.partes) do
 		if item.p and item.p.Parent then item.p.Massless = item.m end
 	end
+	-- Si el juego ya solto el cuerpo (Grabbed = nil), no se vuelve a
+	-- enganchar el weld. Al desposeer con Z, Grabbed sigue apuntando a la
+	-- victima y por eso SI se restaura la carga.
+	local cbe = e.datosG and e.datosG.char and e.datosG.char:FindFirstChild("BodyEffects")
+	local g = cbe and cbe:FindFirstChild("Grabbed")
+	local sigueCargando = g and personajeDe(g.Value) == victima
+
 	local carry = d.carry
 	if carry and carry.c and carry.c.Parent then
-		carry.c.Enabled = carry.e
+		carry.c.Enabled = (sigueCargando and carry.e) or false
 		if carry.c:IsA("Weld") then
 			carry.c.Part0 = carry.p0
 			carry.c.Part1 = carry.p1
@@ -864,9 +891,9 @@ local function restaurarVictima(e)
 		end
 	end)
 
-	-- Vuelve la animacion de cargado del juego.
+	-- Vuelve la animacion de cargado del juego solo si sigue cargando.
 	local animator = vh:FindFirstChildOfClass("Animator")
-	if animator then
+	if animator and sigueCargando then
 		local a = Instance.new("Animation")
 		a.Name = "SpideyPose_Cargado"
 		a.AnimationId = "rbxassetid://88134065149760"
@@ -984,7 +1011,7 @@ local function limpiarPoseyendo(pl, motivo)
 	restaurarControlador(e)
 	restaurarVictima(e)
 	RE_Cuerpo:FireClient(pl, "POSE_STOP", motivo)
-	print("[Spidey V13.0] posesion terminada: " .. tostring(e.victima and e.victima.Name) .. " (" .. tostring(motivo or "manual") .. ")")
+	print("[Spidey V13.1] posesion terminada: " .. tostring(e.victima and e.victima.Name) .. " (" .. tostring(motivo or "manual") .. ")")
 end
 
 local function iniciarPoseyendo(pl)
@@ -999,8 +1026,9 @@ local function iniciarPoseyendo(pl)
 
 	local be = c and c:FindFirstChild("BodyEffects")
 	local g = be and be:FindFirstChild("Grabbed")
-	local victima = g and g.Value
-	if typeof(victima) ~= "Instance" or not victima:IsA("Model") then
+	-- El juego puede guardar un Player o directamente el Model.
+	local victima = personajeDe(g and g.Value)
+	if not victima or not victima.Parent then
 		RE_Cuerpo:FireClient(pl, "POSE_NO", "No estas cargando a nadie")
 		return false
 	end
@@ -1048,7 +1076,7 @@ local function iniciarPoseyendo(pl)
 	pl:SetAttribute("SpideyPoseyendo", victima.Name)
 	victima:SetAttribute("SpideyPoseidoPor", pl.Name)
 	RE_Cuerpo:FireClient(pl, "POSE_START", victima)
-	print("[Spidey V13.0] posesion real: " .. victima.Name .. " (por " .. pl.Name .. ")")
+	print("[Spidey V13.1] posesion real: " .. victima.Name .. " (por " .. pl.Name .. ")")
 	return true
 end
 
@@ -1130,9 +1158,9 @@ _G.SpideyV13Servidor = {
 	end,
 }
 
-print("[Spidey V13.0] servidor listo: tool Control posee el cuerpo que estas cargando")
+print("[Spidey V13.1] servidor listo: tool Control posee el cuerpo que estas cargando")
 
-print("[Spidey V13.0] Servidor listo; valida telaranas y difunde animaciones por RE_Anim")
+print("[Spidey V13.1] Servidor listo; valida telaranas y difunde animaciones por RE_Anim")
 
 else
 --=================================================================
@@ -1141,7 +1169,7 @@ else
 -- Candado: si otra copia de este script ya corre en este cliente, sale.
 if _G.__SPIDEY_V11_ACTIVO then return end
 _G.__SPIDEY_V11_ACTIVO = true
-print("[Spidey V13.0] cargando...")
+print("[Spidey V13.1] cargando...")
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -1166,7 +1194,7 @@ end
 RE = RS:FindFirstChild("SpideyRemotos")
 if not RE then
 	sinServidor = true
-	print("[Spidey V13.0] sin servidor: MODO UNIVERSAL (giros visibles para todos por fisica)")
+	print("[Spidey V13.1] sin servidor: MODO UNIVERSAL (giros visibles para todos por fisica)")
 	RE = Instance.new("Folder")
 	RE.Name = "SpideyRemotos"
 	RE.Parent = RS
@@ -2298,7 +2326,7 @@ local function probarAnimaciones()
 					end
 					if track.Length > 0 then
 						tracksVisibles[nombre] = track
-						print(string.format("[Spidey V13.0] %s visible para TODOS (id %d, %.2fs)", nombre, id, track.Length))
+						print(string.format("[Spidey V13.1] %s visible para TODOS (id %d, %.2fs)", nombre, id, track.Length))
 						break
 					else
 						pcall(function() track:Destroy() end)
@@ -2306,7 +2334,7 @@ local function probarAnimaciones()
 				end
 			end
 			if not tracksVisibles[nombre] and candidatosAnim(nombre)[1] then
-				print("[Spidey V13.0] " .. nombre .. ": ninguna animacion visible carga en este juego (queda la fisica/poses locales)")
+				print("[Spidey V13.1] " .. nombre .. ": ninguna animacion visible carga en este juego (queda la fisica/poses locales)")
 			end
 		end
 		animProbandose = false
@@ -2686,7 +2714,7 @@ local poseyendoVictima = nil
 local poseyendoDatos = nil
 local function bucle(dt)
 	if not hrp or not hum then return end
-	-- V13.0: mientras controlas otro cuerpo, tu avatar queda quieto
+	-- V13.1: mientras controlas otro cuerpo, tu avatar queda quieto
 	-- debajo del mapa; no ejecutes telarana/poses en el.
 	if poseyendo then return end
 
@@ -3158,7 +3186,7 @@ local function alNacer(c)
 	task.wait(1)
 	if player.Character == c then
 		crearGUI()
-		print("[Spidey V13.0] cliente listo | rig=" .. tostring(Pose.Tipo(char)) .. " | A/B procedurales")
+		print("[Spidey V13.1] cliente listo | rig=" .. tostring(Pose.Tipo(char)) .. " | A/B procedurales")
 	end
 end
 
@@ -3175,7 +3203,7 @@ end
 
 RunService.Heartbeat:Connect(bucle)
 -----------------------------------------------------------------
--- V13.0 · POSESION REAL (tool Control), LOCK (Q) y ESP (J)
+-- V13.1 · POSESION REAL (tool Control), LOCK (Q) y ESP (J)
 -- El control ya no usa G ni crea clones: se activa con el tool
 -- Control SOLO cuando ya estas cargando a un cuerpo derribado.
 -----------------------------------------------------------------
@@ -3238,22 +3266,40 @@ local function valorKO(modelo)
 	return nil
 end
 
+-- El juego guarda BodyEffects.Grabbed.Value como Player en el sistema
+-- de carga real (CarrySystem), pero otras variantes guardan el Model.
+local function personajeDe(valor)
+	if typeof(valor) ~= "Instance" then return nil end
+	if valor:IsA("Player") then return valor.Character end
+	if valor:IsA("Model") then return valor end
+	return nil
+end
+
 -- Comprueba que ESTAS CARGANDO a ese cuerpo con el sistema del juego:
--- BodyEffects.Grabbed mutuo + GRABBING_CONSTRAINT en la victima.
+-- Grabbed del que carga + GRABBING_CONSTRAINT real en la victima.
 local function detectarCarga()
 	if not char or not char.Parent then return nil end
 	local be = char:FindFirstChild("BodyEffects")
 	local g = be and be:FindFirstChild("Grabbed")
-	local victima = g and g.Value
-	if typeof(victima) ~= "Instance" or not victima:IsA("Model") then return nil end
-	if not victima.Parent then return nil end
+	local victima = personajeDe(g and g.Value)
+	if not victima or not victima.Parent then return nil end
 
+	-- El agarre por la pierna clasico NO escribe Grabbed en la victima.
+	-- Si existe, debe apuntar a nosotros; si no existe, seguimos.
 	local vbe = victima:FindFirstChild("BodyEffects")
 	local vg = vbe and vbe:FindFirstChild("Grabbed")
-	if not vg or vg.Value ~= char then return nil end
+	if vg then
+		local otro = personajeDe(vg.Value)
+		if otro and otro ~= char then return nil end
+	end
 
+	-- Verdadera prueba: el weld del juego con una parte nuestra y el
+	-- HumanoidRootPart de la victima.
 	local cw = victima:FindFirstChild("GRABBING_CONSTRAINT")
-	if not cw then return nil end
+	if not cw or not cw:IsA("JointInstance") then return nil end
+	local p0, p1 = cw.Part0, cw.Part1
+	if not p0 or not p1 then return nil end
+	if not p0:IsDescendantOf(char) or not p1:IsDescendantOf(victima) then return nil end
 
 	local vh = victima:FindFirstChildOfClass("Humanoid")
 	local vr = victima:FindFirstChild("HumanoidRootPart")
@@ -3433,10 +3479,10 @@ function V11.AlternarESP()
 		for _, p in ipairs(Players:GetPlayers()) do
 			aplicarESPPJugador(p)
 		end
-		print("[Spidey V13.0] ESP ACTIVADO: contorno blanco + nombres (atraviesa paredes)")
+		print("[Spidey V13.1] ESP ACTIVADO: contorno blanco + nombres (atraviesa paredes)")
 		mostrarHUD("ESP ACTIVADO (J para apagar)")
 	else
-		print("[Spidey V13.0] ESP DESACTIVADO")
+		print("[Spidey V13.1] ESP DESACTIVADO")
 		mostrarHUD("ESP DESACTIVADO")
 	end
 	task.delay(2, function()
@@ -3664,7 +3710,7 @@ local function parchearGunHandler()
 	end
 	gunHandlerParcheado = true
 	gunHandlerParcheando = false
-	print("[Spidey V13.0] armas nuevas (Revolver/escopetas): getAim dirigido al lock")
+	print("[Spidey V13.1] armas nuevas (Revolver/escopetas): getAim dirigido al lock")
 	return true
 end
 -- El require de un modulo del juego puede CEDER (esperando el
@@ -3812,7 +3858,7 @@ local function bloquearModeloLock(modelo)
 	elseif b.enviarApuntado then
 		modo = "apuntado remoto"
 	end
-	print("[Spidey V13.0] lock: " .. nombre .. " (" .. modo .. ")")
+	print("[Spidey V13.1] lock: " .. nombre .. " (" .. modo .. ")")
 	return true
 end
 
@@ -3917,7 +3963,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -----------------------------------------------------------------
--- V13.0 · CONTROL REAL: entradas, camara y limpieza del cliente
+-- V13.1 · CONTROL REAL: entradas, camara y limpieza del cliente
 -- Con servidor: el servidor mueve el cuerpo real y anima. Este
 -- cliente solo manda WASD, pone la camara y muestra el HUD.
 -- Sin servidor: intento local directo (menos fiable, solo util si
@@ -4127,7 +4173,7 @@ arrancarPoseyendoLocal = function(victima, remoto)
 
 	local nombre = victima.Name
 	mostrarHUD("CONTROLANDO: " .. nombre .. "   |   Z = desposeer (sigues cargando)")
-	print("[Spidey V13.0] controlando cuerpo real: " .. nombre .. " | Z = desposeer")
+	print("[Spidey V13.1] controlando cuerpo real: " .. nombre .. " | Z = desposeer")
 	if not datos.remoto then
 		seguirBajoMapa()
 	end
@@ -4259,7 +4305,7 @@ local function terminarPoseyendoInterno(motivo)
 
 	player:SetAttribute("SpideyTestMove", nil)
 	mostrarHUD(nil)
-	print("[Spidey V13.0] posesion soltada (" .. tostring(motivo or "manual") .. ")")
+	print("[Spidey V13.1] posesion soltada (" .. tostring(motivo or "manual") .. ")")
 	return true
 end
 
@@ -4282,8 +4328,7 @@ local function validarPoseyendoActual()
 	if vh.Health <= 0 then return false, "el cuerpo murio" end
 	local dead = victima:FindFirstChild("BodyEffects") and victima.BodyEffects:FindFirstChild("Dead")
 	if dead and dead.Value == true then return false, "el cuerpo murio" end
-	local ko = valorKO(victima)
-	if ko and ko.Value == true then return false, "el cuerpo volvio a K.O." end
+	-- K.O. = true es normal: estas cargando a un herido derribado.
 	if not victima:FindFirstChild("GRABBING_CONSTRAINT") then return false, "ya no estas cargando" end
 	if detectarCarga() ~= victima then return false, "ya no estas cargando" end
 	return true
