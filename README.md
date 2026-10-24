@@ -366,4 +366,8 @@ luego el agarre real del `HelperModule` (`Grabbed` del que carga + weld
 
 Nota: el fallback por network owner solo funciona donde la API
 `GetNetworkOwner` esta disponible (servidor); en el cliente las senales que
-importan son `Grabbed`, `Grabbed` inverso y el weld, que si se replican.
+importan son `Grabbed`, `Grabbed` inverso y el weld, que si se replican.- Commit de V13.5: `6b05747a6bf7a7aa75fddf12c3751ba0af7793d2`.
+- Tamano: **165.335 bytes**.
+- SHA256: `4D1D47F93D3E35870FFAE14DC72A9974EC9BF11B1E8C192BEDB25948467073AA`.
+- Sintaxis validada con `luau-compile --only-parse` (exit 0).
+- Raw verificado en vivo tras el push (cabecera `SPIDER V13.5` presente).
