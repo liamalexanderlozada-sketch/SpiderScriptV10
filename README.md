@@ -1,10 +1,39 @@
-# Spiderscript V13.1 🕷️
+# Spiderscript V13.2 🕷️
 
 Sistema **Spider-Man completo** (telaraña, física de péndulo, trepa, cámara,
 sonidos, GUI y animaciones A/B) **+ LOCK, ESP y POSESIÓN REAL DEL CUERPO
 CARGADO** en **un solo archivo combinado**: sirve como script de servidor y
 como LocalScript/executor. Se adapta solo con `RunService:IsServer()`.
 
+> **Corrección V13.2: ya funciona la posesión en Da Hood / executor**
+>
+> La V13.1 detectaba la carga, pero en el modo sin servidor propio (el que usa
+> un executor en Da Hood) la posesión se rompía justo después de empezar.
+> Estas eran las causas reales:
+>
+> 1. `seguirBajoMapa()` se llamaba antes de que existiera su definición local:
+>    el primer clic imprimía `controlando cuerpo real` y lanzaba
+>    `attempt to call a nil value`.
+> 2. Al iniciar la pose local se borraban `Part0` y `Part1` del weld
+>    `GRABBING_CONSTRAINT`. En el siguiente frame, `detectarCarga()` ya no
+>    encontraba la carga y cerraba la posesión.
+> 3. Se rechazaba al herido si `Humanoid.Health <= 0`. Da Hood marca `K.O.`
+>    cuando la vida baja a `0.5` o menos; el cuerpo puede seguir válido con
+>    `BodyEffects.Dead = false`.
+> 4. Si hacías clic justo al agarrar, el `Grabbed` ya había replicado pero el
+>    weld todavía no. Ahora el clic espera hasta **0.6 s** a que aparezca.
+>
+> En V13.2:
+>
+> - La pose local ya no borra `Part0/Part1`; solo desactiva el weld.
+> - El jugador vuelve arriba **antes** de reenganchar el weld, para que el
+>   herido no caiga al vacío.
+> - Con **Z** se fuerza el weld activo si `Grabbed` sigue apuntando al herido.
+> - Si el juego quita la carga (`Grabbed = nil`), el weld queda **desactivado**
+>   y no se reproduce la animación de cargado.
+> - Se mantiene la detección de la V13.1: `Grabbed` puede ser `Player` o
+>   `Model`, y la prueba fuerte es el weld real `GRABBING_CONSTRAINT`.
+>
 > **Novedad V13.1: detección corregida del agarre por la pierna**
 > - El juego **no escribe** `BodyEffects.Grabbed` en la víctima cuando la
 >   cargas por la pierna. Antes se exigía y por eso decía "No estás cargando".
@@ -37,7 +66,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/liamalexanderlozada-s
 ```
 
 Si tu ejecutor cachea la URL, usa la URL por commit:
-`https://raw.githubusercontent.com/liamalexanderlozada-sketch/SpiderScriptV10/<commit>/Resources/Scripts/Main.lua`
+`https://raw.githubusercontent.com/liamalexanderlozada-sketch/SpiderScriptV10/COMMIT_AQUI/Resources/Scripts/Main.lua`
 
 > Si ya tenías una versión anterior cargada en la misma sesión, **rejoin**:
 > el candado `_G.__SPIDEY_V11_ACTIVO` impide cargar dos veces el script.
@@ -54,23 +83,22 @@ Si tu ejecutor cachea la URL, usa la URL por commit:
 | **WASD** | Mueve el cuerpo real que estás poseyendo. |
 | **G** | Lo usa el sistema de carga del juego para **soltar** al herido. No se usa para desposeer. |
 
-## Cómo funciona la posesión (V13.1)
+## Cómo funciona la posesión (V13.2)
 
 ### 1. Requisitos para poseer
 
-El tool `Control` **no posee a cualquiera**. El servidor comprueba que exista
-una carga real:
+El tool `Control` **no posee a cualquiera**. El cliente y el servidor
+comprueban que exista una carga real:
 
 - `character.BodyEffects.Grabbed.Value` apunta al herido (Player o Model)
 - existe `victima.GRABBING_CONSTRAINT` con `Part0` en el que carga y
   `Part1` en el `HumanoidRootPart` del herido
 - si `victima.BodyEffects.Grabbed` existe, apunta al que carga; en el
   agarre clásico por la pierna puede estar en `nil`, y eso es válido
-- el herido no está muerto y ambos Humanoid tienen vida
-- `K.O. = true` es normal y no cancela la posesión
-
-El K.O. del herido se conserva. La detección no lo usa para cancelar:
-antes se cortaba sola al empezar porque el cuerpo estaba K.O.
+- el herido no está muerto (`BodyEffects.Dead = false`). Si `Dead` no existe,
+  se exige `Humanoid.Health > 0`
+- `K.O. = true` es normal y no cancela la posesión; la vida puede ser `0.5`
+- el que carga debe estar vivo y con el tool `Control` equipado
 
 Si falta cualquiera de esas cosas, el clic no hace nada y el HUD avisa. No
 basta con estar cerca ni con tener el tool equipado.
@@ -78,8 +106,8 @@ basta con estar cerca ni con tener el tool equipado.
 ### 2. Al poseer
 
 1. Se guarda el estado del cuerpo original y del herido.
-2. Se **desactiva** el weld de carga sin destruirlo, para que el juego no
-   dispare su ragdoll mientras controlas.
+2. Se **desactiva** el weld de carga sin destruirlo, conservando
+   `Part0/Part1`, para que el juego no dispare su ragdoll mientras controlas.
 3. Se desactivan sockets y `NoCollisionConstraint_HOLD` del herido.
 4. El cuerpo original queda **13 studs debajo** del herido, anclado, tieso y
    mirando hacia arriba.
@@ -88,6 +116,11 @@ basta con estar cerca ni con tener el tool equipado.
 6. El servidor mueve al herido con `Humanoid:Move`, lo gira según el vector
    de WASD y reproduce sus animaciones.
 7. El cliente solo envía la orden de movimiento (~30 Hz) y monta cámara/HUD.
+
+En **modo local** (Da Hood / executor) se usa el mismo procedimiento, pero
+sin servidor: el cliente mueve el cuerpo real usando la propiedad de red que
+la carga del juego ya le dio. El cliente conserva `Part0/Part1` y desactiva
+el weld solo localmente.
 
 ### 3. Animaciones: las del herido, no las default
 
@@ -113,30 +146,31 @@ Al pulsar Z:
 3. Se restaura el herido: `PlatformStand = true`, `WalkSpeed = 0`,
    `Massless = true`, sockets y el weld de carga.
 4. **La carga sigue activa**: `Grabbed` sigue apuntando al herido y el weld
-   `GRABBING_CONSTRAINT` queda otra vez en `UpperTorso`.
+   `GRABBING_CONSTRAINT` se reengancha en `UpperTorso`.
 5. No se destruye nada y no se suelta al herido.
 
 > El orden importa: si se reactivara el weld antes de subir al jugador, el
 > herido se engancharía al cuerpo original que aún está debajo del mapa y los
-> dos caerían al vacío. Por eso primero se restaura al jugador y después al
-> herido.
+> dos caerían al vacío. Por eso primero se restaura al jugador y después el
+> weld del herido.
 
 ### 5. Salida automática
 
 La posesión se corta sola si:
 
 - dejas de cargar al herido (`Grabbed` cambia o desaparece),
-- el herido muere (`Health <= 0` o `BodyEffects.Dead`),
+- el herido muere (`BodyEffects.Dead = true`; si no existe `Dead`, `Health <= 0`),
 - el herido desaparece o respawnea,
 - tu personaje muere, respawnea o sale del juego.
 
 En todos los casos se restaura la cámara, el HUD, el cuerpo original y el
-estado del herido.
+estado del herido. Si la carga desapareció, el weld queda **desactivado** y
+no se reproduce `SpideyPose_Cargado`.
 
 ## LOCK y ESP (sin tocar)
 
-**No se tocó el código del lock ni del ESP.** Siguen funcionando igual que en
-V11.9:
+**No se tocó el código del lock ni el ESP.** Siguen funcionando igual que en
+las versiones anteriores:
 
 - El lock visual (2 `Highlight` + 1 `Beam`) se crea en tu cliente.
 - Las armas nuevas siguen apuntando con el parche de `GunHandler.getAim`.
@@ -169,80 +203,91 @@ Con eso:
 ### 2. Sin servidor: Da Hood / executor
 
 Si no existe `ReplicatedStorage.SpideyRemotos`, el script entra en **modo
-local**. El cliente intenta usar el cuerpo real y la propiedad de red que la
-carga ya le dio. Esto puede funcionar a medias, pero **no se garantiza que los
-demás jugadores lo vean** ni que el juego ajeno no lo sobrescriba: un executor
-no puede crear scripts de servidor. La posesión fiable necesita el servidor de
-tu juego.
+local**. El cliente mueve el cuerpo real usando la propiedad de red que la
+carga ya le dio. En V13.2 este camino funciona para el jugador que controla:
+se corrigieron el `nil` de `seguirBajoMapa`, el borrado de `Part0/Part1` y el
+orden de restauración. Que los demás jugadores lo vean depende de que el
+juego mantenga esa propiedad de red; un executor no puede crear scripts de
+servidor. La posesión totalmente fiable y replicada sigue necesitando el
+servidor de tu juego.
 
 El tool `Control` sigue exigiendo que el juego te esté cargando por la pierna.
 El lock y el ESP siguen funcionando como siempre.
 
 ## Pruebas hechas en Studio (copia `Official Hood.rbxl`)
 
-Pruebas reales ejecutando el juego, no solo leyendo el código. Se usó una
-plataforma aislada de 140×140 studs en `(10000, 5000, 10000)` y un NPC R15
-llamado `CuerpoTest`, con `BodyEffects.Grabbed` apuntando al jugador, el weld
-`GRABBING_CONSTRAINT` en `UpperTorso`, `K.O = false` y `Dead = false`. Para
-comprobar la prioridad de animaciones se le pusieron animaciones propias:
+Se probaron **los dos modos** en Studio con una plataforma aislada y un NPC
+R15 llamado `CuerpoTest`:
 
-- `Animate.idle.Animation1 = rbxassetid://507767714`
-- `Animate.walk.Animation1 = rbxassetid://507766666`
+- **Modo servidor:** `ServerScriptService.SpideyV11` activo, cliente en
+  `StarterPlayerScripts.SpideyClienteV11`.
+- **Modo local / executor:** servidor `SpideyV11` desactivado para que el
+  cliente no encuentre `SpideyRemotos` y entre en `sinServidor = true`.
+- Estado simulado: `BodyEffects.Grabbed = CuerpoTest` (Model), weld
+  `GRABBING_CONSTRAINT` con `Part0 = UpperTorso` y
+  `Part1 = HumanoidRootPart`, `K.O = true`, `Dead = false`.
+- En la prueba de K.O. realista se usó `Humanoid.Health = 0.5`.
 
-### Posesión con clic real en `Control`
+### Detección y clic inmediato
 
-- Antes de empezar, clic sin carga: **no posee** (`SpideyPoseyendo = nil`).
-- Con carga válida, clic en `Control`:
-  - `SpideyPoseyendo = CuerpoTest`
-  - cámara con `CameraSubject` padre `CuerpoTest`
-  - cuerpo original en `(10000, 4990.70, 10000.99)`, **anclado**, 13 studs
-    debajo del herido y con `LookVector.Y = 1` (mirando hacia arriba)
-  - herido en `(10000, 5003.70, 10000.99)`, sobre la plataforma
-  - animación `SpideyPose_idle` con el ID propio `507767714`
-- Clic en `Control` estando ya poseyendo: **no desposee**; el atributo sigue
-  en `CuerpoTest`.
+- Sin carga válida, `Control` no posee.
+- Con la carga clásica (`Grabbed = Model`, `victima.Grabbed = nil`) sí posee.
+- Con la variante moderna (`Grabbed = Player` en ambos lados) sí posee.
+- Se creó el `Grabbed` **antes** que el weld y se hizo clic de inmediato: el
+  reintento de 0.6 s esperó la replicación y la pose arrancó.
 
-### Movimiento y animaciones con WASD real
+### Posesión
 
-- W mantenida: el herido pasó de `Z = 10000.99` a `Z = 9969.92`
-  (**~31 studs** durante la pulsación) y reprodujo
-  `SpideyPose_walk` con el ID propio `507766666`.
-- Al soltar W: volvió a `SpideyPose_idle` con el ID propio `507767714`.
-- En otra medición, W durante 1,2 s recorrió **19,8 studs** (16 studs/s).
-- El cuerpo se mantuvo sobre la plataforma (`Y = 5003.70`, piso `Plastic`)
-  durante 3,5 s seguidos sin caerse.
+- `SpideyPoseyendo = CuerpoTest`.
+- Cámara con `CameraSubject` en el Humanoid del herido.
+- Cuerpo original **13.00 studs debajo** del herido, anclado, tieso y mirando
+  hacia arriba.
+- Weld desactivado pero con `Part0/Part1` conservados.
+- `K.O. = true` y `Dead = false` se mantuvieron; el herido con
+  `Health = 0.5` también fue controlable.
+- WASD movió al herido (~15–20 studs en 1.2 s) y el cuerpo original siguió
+  13 studs debajo.
+- Animación propia de idle al parar y walk al moverse.
 
-### Desposeer con Z real
+### Clic extra en `Control`
 
-- `SpideyPoseyendo = nil`
-- cámara de vuelta en el `Humanoid` del jugador
-- HUD oculto
-- jugador en `(10000, 5003.70, 9972.86)`, desanclado y `WalkSpeed = 16`
-- herido en `(10000, 5005.23, 9971.87)`, sobre la plataforma
-- `PlatformStand = true`, `WalkSpeed = 0`, `Massless = true`
-- weld `GRABBING_CONSTRAINT` activo otra vez en `UpperTorso`
-- `Grabbed` sigue apuntando en los dos sentidos
-- animación `SpideyPose_Cargado` del juego
+- Estando ya poseyendo, otro clic **no desposee**.
+- Se mostró el aviso: `Para desposeer usa Z (sigues cargando al herido)`.
+- La cámara siguió en el herido y el cuerpo siguió 13 studs debajo.
+
+### Desposeer con Z
+
+Probado con la tecla **Z** real y con el hook `UNPOSE`:
+
+- cámara de vuelta en el jugador,
+- HUD oculto,
+- jugador de vuelta arriba,
+- weld `GRABBING_CONSTRAINT` **activo** otra vez,
+- `Part0/Part1` conservados,
+- `Grabbed` sigue apuntando al herido,
+- herido con `PlatformStand = true`,
+- animación `SpideyPose_Cargado` solo si la carga sigue activa.
 
 ### Salida automática al perder la carga
 
-Se pusieron `Grabbed = nil` en el jugador y en el herido:
+Se puso `Grabbed = nil` con la pose activa:
 
-- la posesión terminó sola
-- cámara y HUD normales
-- jugador y herido sobre la plataforma
-- el herido quedó en `PlatformStand`, `WalkSpeed = 0`, `Massless = true`
-- el weld se restauró
+- la posesión terminó sola,
+- cámara y HUD normales,
+- jugador arriba,
+- weld **desactivado**,
+- `Part0/Part1` conservados para una carga futura,
+- `SpideyPose_Cargado` **no** quedó reproduciéndose.
 
-**No se pudo probar con la herramienta de Studio:** dos jugadores reales a la
-vez (una carga real entre dos cuentas) ni el executor/Da Hood real. La prueba
-controlada usó un NPC con el estado de carga simulado y el clic real del tool.
-La prueba final con dos jugadores la haces tú.
+**No se pudo probar desde Studio:** dos jugadores reales a la vez en Da Hood
+(una carga real entre dos cuentas). Esa prueba final la hace el usuario; el
+modo local y el modo servidor se validaron por separado con el estado real del
+juego simulado y el clic/teclas reales.
 
 ## Cómo probarlo en Studio
 
 1. Abre `Official Hood.rbxl`.
-2. Activa `ServerScriptService.SpideyV11` para probar el modo servidor.
+2. Para el modo servidor, activa `ServerScriptService.SpideyV11`.
 3. Pulsa **Play**.
 4. Derriba a un NPC/jugador y cárgalo por la pierna con el sistema del juego.
 5. Equipa el tool **Control** y haz **clic izquierdo**.
@@ -271,10 +316,10 @@ deseado, porque el hook ignora valores idénticos al anterior.
 
 ## Límites conocidos
 
-- **Da Hood/executor:** no hay servidor propio. El cliente puede intentar
-  mover el cuerpo real, pero no se garantiza la replicación ni que el juego
-  ajeno no lo sobrescriba. La posesión fiable es en tu juego con el Script de
-  servidor.
+- **Da Hood/executor:** no hay servidor propio. El cliente ya puede mover el
+  cuerpo real con la propiedad de red, pero no se garantiza que los demás lo
+  vean igual ni que el juego ajeno no lo sobrescriba. La posesión totalmente
+  fiable es en tu juego con el Script de servidor.
 - **Tu juego:** el servidor mueve y anima el cuerpo real; todos lo ven igual.
 - El cuerpo propio se coloca 13 studs debajo del herido, no en el vacío
   infinito.
@@ -290,8 +335,8 @@ deseado, porque el hook ignora valores idénticos al anterior.
 - `Resources/Scripts/StarterPlayerScripts/SpideyClienteV11.lua` — copia para el
   LocalScript de StarterPlayerScripts.
 
-Los tres son **idénticos** al `SPIDER V13.1.lua` entregado.
+Los tres son **idénticos** al `SPIDER V13.2.lua` entregado.
 
-- Tamaño: **146.753 bytes**.
-- SHA256: `C679706C397C4CEE4B0BF91DFB47FC4C8DCF9ADD62EC87A928CBFD1DD4D45DAC`.
+- Tamaño: **149.914 bytes**.
+- SHA256: `12363F08979A257834A3DF89300BE509C8BD658415B45AC9DCFB219FC4723D97`.
 - Sintaxis validada con `luau-compile --only-parse` (exit 0).
