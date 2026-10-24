@@ -1,10 +1,20 @@
-# Spiderscript V13.3 🕷️
+# Spiderscript V13.4 🕷️
 
 Sistema **Spider-Man completo** (telaraña, física de péndulo, trepa, cámara,
 sonidos, GUI y animaciones A/B) **+ LOCK, ESP y POSESIÓN REAL DEL CUERPO
 CARGADO** en **un solo archivo combinado**: sirve como script de servidor y
 como LocalScript/executor. Se adapta solo con `RunService:IsServer()`.
 
+> **Novedad V13.4: el modo con servidor también mantiene al herido como
+> cadáver**
+>
+> - El servidor ya no pone de pie al herido: `PlatformStand = true`,
+>   `AutoRotate = false`, `WalkSpeed = 0`, `JumpPower = 0`.
+> - Lo mueve por **CFrame**, no con `Humanoid:Move`.
+> - Usa **sus propias animaciones** (`idle`, `walk`, `run`, `jump`, `fall`).
+> - **Shift** corre y **Espacio** salta también con servidor.
+> - Al desposeer se reactiva el `Animate` del herido.
+>
 > **Novedad V13.3: el cuerpo controlado sigue siendo un cadáver**
 >
 > - El herido **no se pone de pie**. Sigue tirado e inmovilizado.
@@ -12,9 +22,7 @@ como LocalScript/executor. Se adapta solo con `RunService:IsServer()`.
 > - Si tiene animaciones de **zombi**, se usan las de zombi.
 > - Tu cuerpo original queda **debajo** de él, mirando hacia arriba y
 >   moviéndose con él como un imán.
-> - **Shift** = correr (animación `run` del herido).
-> - **Espacio** = saltar (animación `jump` del herido).
-> - **G** sigue soltando la carga del juego y te devuelve arriba.
+> - **G** suelta la carga del juego y te devuelve arriba.
 >
 > **Corrección V13.2 (sigue incluida):**
 > - La posesión local ya no borra `Part0/Part1` del weld.
@@ -39,7 +47,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/liamalexanderlozada-s
 ```
 
 Si tu ejecutor cachea la URL, usa la URL por commit:
-`https://raw.githubusercontent.com/liamalexanderlozada-sketch/SpiderScriptV10/cef7d0717d05b6a9e4a2ee64ff2637595482074d/Resources/Scripts/Main.lua`
+`https://raw.githubusercontent.com/liamalexanderlozada-sketch/SpiderScriptV10/01d848338048d9cc72919ac042b9302e0dc94860/Resources/Scripts/Main.lua`
 
 > Si ya tenías una versión anterior cargada en la misma sesión, **rejoin**:
 > el candado `_G.__SPIDEY_V11_ACTIVO` impide cargar dos veces el script.
@@ -58,7 +66,7 @@ Si tu ejecutor cachea la URL, usa la URL por commit:
 | **J** | **ESP:** contorno blanco + nombre de usuario arriba de los jugadores, visible a través de las paredes. |
 | **X + pared** | Trepar. Shift queda libre. |
 
-## Cómo funciona la posesión (V13.3)
+## Cómo funciona la posesión (V13.4)
 
 ### 1. Requisitos para poseer
 
@@ -86,12 +94,14 @@ El tool `Control` **no posee a nadie** si no hay una carga real:
    - `AutoRotate = false`
    - `WalkSpeed = 0`
    - `JumpPower = 0`
-6. Se desactiva su `Animate` local para que no pele con las animaciones
+6. Se desactiva su `Animate` local para que no pelee con las animaciones
    nuestras.
 7. Se cargan **sus propias animaciones** desde su `Animate`:
    `idle`, `walk`, `run`, `jump` y `fall`.
-8. El cliente mueve el cuerpo real por **CFrame**, usando la propiedad de red
-   que la carga del juego ya le dio.
+8. El cuerpo real se mueve por **CFrame**:
+   - **sin servidor:** desde el cliente, con la propiedad de red que la
+     carga del juego ya le dio;
+   - **con servidor:** desde el servidor, autoritativo para todos.
 9. La cámara se monta sobre el herido y el HUD avisa
    `CONTROLANDO: <nombre> | Z = desposeer`.
 
@@ -117,13 +127,12 @@ El tool `Control` **no posee a nadie** si no hay una carga real:
 1. Se devuelve **primero** al jugador a la superficie, delante del herido.
 2. Se restaura la cámara a tu `Humanoid` y se oculta el HUD.
 3. Se restaura el herido:
-   - `PlatformStand = true`
-   - `WalkSpeed = 0`
+   - `PlatformStand = true` (sigue siendo un herido)
    - `Massless = true`
    - sockets y weld de carga
+   - su `Animate` se reactiva
 4. **La carga sigue activa**: `Grabbed` sigue apuntando al herido y el weld
-   `GRABBING_CONSTRAINT` se reengancha.
-5. Se reactiva el `Animate` del herido.
+   `GRABBING_CONSTRAINT` se reengancha con sus `Part0/Part1` originales.
 
 ### 6. Soltar con G / salida automática
 
@@ -132,6 +141,15 @@ El tool `Control` **no posee a nadie** si no hay una carga real:
 - El weld queda desactivado.
 - No se reproduce la animación de cargado.
 - El herido queda donde lo dejaste.
+
+### 7. Modo con servidor (V13.4)
+
+- El servidor valida la carga y la posesión.
+- Mantiene al herido tirado (`PlatformStand`, `AutoRotate`, `WalkSpeed 0`).
+- Acumula el desplazamiento y aplica `CFrame` en cada `Heartbeat`.
+- Carga y reproduce las animaciones propias del herido.
+- Recibe `sprint` y `jump` del cliente para usar `run` y `jump`.
+- Al desposeer restaura el estado guardado y reactiva el `Animate`.
 
 ## LOCK y ESP (sin tocar)
 
@@ -156,8 +174,8 @@ Con eso:
 
 - El servidor crea `ReplicatedStorage.SpideyRemotos` con `RE_Cuerpo` y
   `RE_Lock`.
-- El servidor valida la carga, mueve el cuerpo real, reproduce sus
-  animaciones y sincroniza a todos.
+- El servidor valida la carga, mueve el cuerpo real por CFrame, reproduce
+  sus animaciones y sincroniza a todos.
 - Al desposeer con Z, el herido vuelve a su estado de cargado.
 - El lock del dueño dirige las balas por `RE_Lock`.
 
@@ -165,15 +183,14 @@ Con eso:
 
 Si no existe `ReplicatedStorage.SpideyRemotos`, el script entra en **modo
 local**. El cliente mueve el cuerpo real usando la propiedad de red que la
-carga ya le dio. En V13.3 este camino funciona para el jugador que controla:
-el herido sigue tirado, hace sus propias animaciones y tu cuerpo queda
-debajo. Que los demás lo vean depende de que el juego mantenga esa propiedad
-de red; un executor no puede crear scripts de servidor.
+carga ya le dio. El herido sigue tirado, hace sus propias animaciones y tu
+cuerpo queda debajo. Que los demás lo vean depende de que el juego mantenga
+esa propiedad de red; un executor no puede crear scripts de servidor.
 
 ## Pruebas hechas en Studio (copia `Official Hood.rbxl`)
 
 Se probaron **los dos modos** con un herido sintético (`CuerpoTest`), weld
-real, `K.O. = true`, `Dead = false` y `Health = 0.5` en modo local.
+real, `K.O. = true`, `Dead = false` y `Health = 0.5`.
 
 ### Modo local / executor
 
@@ -181,8 +198,10 @@ real, `K.O. = true`, `Dead = false` y `Health = 0.5` en modo local.
 - Reintento de 0.6 s cuando el weld tarda en replicar.
 - Cámara sobre el herido.
 - Cuerpo original **13.00 studs debajo**, mirando arriba.
-- El herido **no se levanta**: `PlatformStand = true`, `WalkSpeed = 0`.
-- Movimiento por CFrame: **19.21 studs en 1.2 s**.
+- El herido **no se levanta**: `PlatformStand = true`, `AutoRotate = false`,
+  `WalkSpeed = 0`, `JumpPower = 0`.
+- Su `Animate` queda desactivado mientras lo controlas.
+- Movimiento por CFrame: **15.99 studs en 1.0 s**.
 - Animaciones:
   - `SpideyPose_idle` parado
   - `SpideyPose_walk` caminando
@@ -195,6 +214,7 @@ real, `K.O. = true`, `Dead = false` y `Health = 0.5` en modo local.
   - `Part0/Part1` conservados
   - `Animate` reactivado
   - `Grabbed` sigue apuntando al herido
+  - `PlatformStand` sigue `true` (sigue siendo un herido)
 - `Grabbed = nil` (G / soltar carga):
   - la posesión terminó sola
   - jugador arriba
@@ -204,10 +224,33 @@ real, `K.O. = true`, `Dead = false` y `Health = 0.5` en modo local.
 ### Modo servidor
 
 - Pose con `Health = 0.5` y `K.O. = true`.
-- Movimiento del herido replicado.
-- Cuerpo original 13 studs debajo.
 - Cámara sobre el herido.
-- `SpideyPoseyendo = CuerpoTest`.
+- Cuerpo original **13.00 studs debajo**.
+- El herido **no se levanta**:
+  - `PlatformStand = true`
+  - `AutoRotate = false`
+  - `WalkSpeed = 0`
+  - `JumpPower = 0`
+  - estado `PlatformStanding`
+  - `Animate` desactivado
+- Movimiento por CFrame: **14.93 studs en 1.0 s**.
+- Animaciones verificadas en el servidor:
+  - `SpideyPose_idle` parado
+  - `SpideyPose_walk` caminando
+  - `SpideyPose_run` con Shift
+  - `SpideyPose_jump` con Espacio
+- Z:
+  - cámara al jugador
+  - weld `Enabled = true`
+  - `Part0 = UpperTorso`, `Part1 = HumanoidRootPart`
+  - `Animate` reactivado
+  - `PlatformStand` sigue `true`
+- `Grabbed = nil`:
+  - la posesión terminó sola
+  - cámara al jugador
+  - weld desactivado
+  - `Animate` reactivado
+  - sin tracks nuestros reproduciéndose
 
 ## Cómo probarlo en Studio
 
@@ -251,9 +294,9 @@ deseado, porque el hook ignora valores idénticos al anterior.
 - `Resources/Scripts/StarterPlayerScripts/SpideyClienteV11.lua` — copia para el
   LocalScript de StarterPlayerScripts.
 
-Los tres son **idénticos** al `SPIDER V13.3.lua` entregado.
+Los tres son **idénticos** al `SPIDER V13.4.lua` entregado.
 
-- Commit de V13.3: `cef7d0717d05b6a9e4a2ee64ff2637595482074d`.
-- Tamaño: **153.004 bytes**.
-- SHA256: `6EBCA80F416727972ED810EE923316C0D4710D98D95B3B81CFDA69CD2B687500`.
+- Commit de V13.4: `01d848338048d9cc72919ac042b9302e0dc94860`.
+- Tamaño: **156.053 bytes**.
+- SHA256: `5986C6358D5A91C8F6172FB00E28A9A37CB30F108C34C1721E4683055DA8C311`.
 - Sintaxis validada con `luau-compile --only-parse` (exit 0).
