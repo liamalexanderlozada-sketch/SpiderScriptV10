@@ -1,8 +1,8 @@
 --[[
-	SPIDER V13.3 · TODO EL SISTEMA EN UN SOLO SCRIPT COMBINADO
+	SPIDER V13.4 · TODO EL SISTEMA EN UN SOLO SCRIPT COMBINADO
 	Servidor + Cliente en el mismo archivo. Se adapta solo.
 
-	LO NUEVO DE V13.3 (posesion real del cuerpo cargado):
+	LO NUEVO DE V13.4 (posesion real del cuerpo cargado):
 	  Derriban a alguien y lo cargas con el sistema de carga del
 	  juego. Equipa el tool Control (lo entrega este script junto
 	  con Spider) y hazle clic. Si estas cargando de verdad, tu
@@ -16,7 +16,7 @@
 	  Ya no usa G y ya no crea muñecos ni clones para fingir el
 	  control.
 
-	V13.3 (el cuerpo sigue siendo un cadaver):
+	EL HERIDO SIGUE SIENDO UN CADAVER (V13.3 y V13.4):
 	  El herido NO se pone de pie. Sigue tirado e inmovilizado y
 	  solo hace sus propias animaciones de caminar, correr y
 	  saltar mientras tu lo controlas. Si el tiene animaciones de
@@ -25,7 +25,14 @@
 	  Shift = correr, Espacio = saltar. G suelta la carga del juego
 	  y te devuelve arriba automaticamente.
 
-	CORRECCION V13.3 (Da Hood / executor):
+	V13.4 (modo con servidor):
+	  El servidor hace exactamente lo mismo que el modo local:
+	  mantiene al herido tirado (PlatformStand, AutoRotate false,
+	  WalkSpeed 0), lo mueve por CFrame y usa sus animaciones
+	  idle/walk/run/jump. Shift y Espacio tambien funcionan.
+	  Al desposeer se reactiva el Animate propio del herido.
+
+	CORRECCIONES V13.2 / V13.3 (Da Hood / executor):
 	  Se corrigio el fallo que impedia controlar al herido cuando se
 	  juega sin servidor propio:
 	   - "seguirBajoMapa" se llamaba antes de existir y lanzaba nil.
@@ -357,7 +364,7 @@ end)
 -- StarterPlayer.StarterPlayerScripts.SpideyClienteV11 (LocalScript).
 -- Un Script de servidor no puede crear codigo cliente en runtime.
 if not game:GetService("StarterPlayer").StarterPlayerScripts:FindFirstChild("SpideyClienteV11") then
-	warn("[Spidey V13.3] Falta el LocalScript SpideyClienteV11 (pegar este mismo archivo en StarterPlayerScripts)")
+	warn("[Spidey V13.4] Falta el LocalScript SpideyClienteV11 (pegar este mismo archivo en StarterPlayerScripts)")
 end
 
 local CFG = {
@@ -600,7 +607,7 @@ Players.PlayerAdded:Connect(function(player)
 end)
 
 -----------------------------------------------------------------
--- V13.3 · POSESION REAL DEL CUERPO CARGADO (tool Control)
+-- V13.4 · POSESION REAL DEL CUERPO CARGADO (tool Control)
 -- Ya NO se crea un muñeco nuevo. La posesion se activa SOLO si ya
 -- estas cargando a un cuerpo derribado con el sistema de carga del
 -- juego (GRABBING_CONSTRAINT + BodyEffects.Grabbed). El cuerpo
@@ -696,6 +703,9 @@ local function guardarVictima(victima)
 		sockets = {},
 		ncs = {},
 	}
+	d.startCF = vr and vr.CFrame
+	d.animate = victima:FindFirstChild("Animate")
+	d.animateEnabled = d.animate and d.animate.Enabled or false
 	pcall(function() d.dueno = vr and vr:GetNetworkOwner() end)
 
 	for _, p in ipairs(victima:GetDescendants()) do
@@ -754,13 +764,17 @@ local function prepararVictima(d)
 		if item.p and item.p.Parent then item.p.Massless = false end
 	end
 
-	vh.PlatformStand = false
-	vh.AutoRotate = true
-	vh.WalkSpeed = 16
-	vh.JumpPower = 50
+	-- V13.4: el herido sigue siendo un cadaver. No se levanta.
+	if d.animate and d.animate.Parent then
+		d.animate.Enabled = false
+	end
+	vh.PlatformStand = true
+	vh.AutoRotate = false
+	vh.WalkSpeed = 0
+	vh.JumpPower = 0
 	vh.UseJumpPower = true
 	vr.Anchored = false
-	pcall(function() vh:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+	pcall(function() vh:ChangeState(Enum.HumanoidStateType.PlatformStanding) end)
 	vh:Move(Vector3.zero, false)
 end
 
@@ -770,14 +784,22 @@ local function detenerTracksServer(animator)
 	end
 end
 
+local function normalizarIdAnimacionServer(valor)
+	if type(valor) ~= "string" then return nil end
+	return string.match(valor, "^rbxassetid://(%d+)$")
+		or string.match(valor, "id=(%d+)")
+		or string.match(valor, "^(%d+)$")
+end
+
 local function idsDeAnimateServer(victima, nombre)
 	local ids = {}
 	local animate = victima:FindFirstChild("Animate")
 	local seccion = animate and animate:FindFirstChild(nombre)
 	if seccion then
 		for _, a in ipairs(seccion:GetChildren()) do
-			if a:IsA("Animation") and a.AnimationId ~= "" then
-				table.insert(ids, a.AnimationId)
+			if a:IsA("Animation") then
+				local id = normalizarIdAnimacionServer(a.AnimationId)
+				if id then table.insert(ids, id) end
 			end
 		end
 	end
@@ -787,9 +809,17 @@ end
 local function idsRespaldoServer(rig, nombre)
 	if rig == Enum.HumanoidRigType.R6 then
 		if nombre == "idle" then return { "180435571" } end
+		if nombre == "walk" then return { "180426354" } end
+		if nombre == "run" then return { "180426354" } end
+		if nombre == "jump" then return { "125750702" } end
+		if nombre == "fall" then return { "180436148" } end
 		return { "180426354" }
 	end
 	if nombre == "idle" then return { "507766666" } end
+	if nombre == "walk" then return { "507777826" } end
+	if nombre == "run" then return { "507767714" } end
+	if nombre == "jump" then return { "507765000" } end
+	if nombre == "fall" then return { "507770583" } end
 	return { "507777826" }
 end
 
@@ -802,13 +832,13 @@ local function cargarTrackServer(animator, victima, nombre)
 		for _, id in ipairs(ids) do
 			local a = Instance.new("Animation")
 			a.Name = "SpideyPose_" .. nombre
-			a.AnimationId = (string.match(id, "^rbxassetid://") and id) or ("rbxassetid://" .. id)
+			a.AnimationId = "rbxassetid://" .. id
 			local ok, tr = pcall(function()
 				return animator:LoadAnimation(a)
 			end)
 			if ok and tr then
 				if not primero then primero = tr end
-				tr.Looped = true
+				tr.Looped = (nombre ~= "jump")
 				tr.Priority = (nombre == "idle") and Enum.AnimationPriority.Idle or Enum.AnimationPriority.Movement
 				tr:Play(0.1)
 				-- Las animaciones que trae el cuerpo original tienen prioridad
@@ -839,9 +869,13 @@ local function prepararAnimacionesServer(e)
 	local vh = e.victimaHum
 	local animator = vh and vh:FindFirstChildOfClass("Animator")
 	if not animator then return end
+	e.animator = animator
 	detenerTracksServer(animator)
 	e.trackIdle = cargarTrackServer(animator, e.victima, "idle")
 	e.trackWalk = cargarTrackServer(animator, e.victima, "walk")
+	e.trackRun = cargarTrackServer(animator, e.victima, "run")
+	e.trackJump = cargarTrackServer(animator, e.victima, "jump")
+	e.trackFall = cargarTrackServer(animator, e.victima, "fall")
 	detenerTracksServer(animator)
 	e.animActual = nil
 	if e.trackIdle then
@@ -853,14 +887,35 @@ end
 local function actualizarAnimacionesServer(e)
 	local mov = e.mov or Vector3.zero
 	local moviendo = mov.Magnitude > 0.05
-	if moviendo and e.animActual ~= "walk" then
+	local objetivo = "idle"
+	if e.jump and e.trackJump then
+		objetivo = "jump"
+	elseif moviendo and e.sprint and e.trackRun then
+		objetivo = "run"
+	elseif moviendo and e.trackWalk then
+		objetivo = "walk"
+	elseif moviendo and e.trackRun then
+		objetivo = "run"
+	end
+	if e.animActual ~= objetivo then
 		if e.trackIdle then pcall(function() e.trackIdle:Stop(0.15) end) end
-		if e.trackWalk then pcall(function() e.trackWalk:Play(0.15) end) end
-		e.animActual = "walk"
-	elseif not moviendo and e.animActual ~= "idle" then
 		if e.trackWalk then pcall(function() e.trackWalk:Stop(0.15) end) end
-		if e.trackIdle then pcall(function() e.trackIdle:Play(0.15) end) end
-		e.animActual = "idle"
+		if e.trackRun then pcall(function() e.trackRun:Stop(0.15) end) end
+		if e.trackJump then pcall(function() e.trackJump:Stop(0.15) end) end
+		local tr = nil
+		if objetivo == "idle" then
+			tr = e.trackIdle
+		elseif objetivo == "walk" then
+			tr = e.trackWalk
+		elseif objetivo == "run" then
+			tr = e.trackRun
+		elseif objetivo == "jump" then
+			tr = e.trackJump
+		end
+		if tr then pcall(function() tr:Play(0.15) end) end
+		e.animActual = objetivo
+	elseif objetivo == "jump" and e.trackJump and not e.trackJump.IsPlaying then
+		pcall(function() e.trackJump:Play(0.1) end)
 	end
 end
 
@@ -900,6 +955,11 @@ local function restaurarVictima(e)
 			carry.c.C0 = carry.c0
 			carry.c.C1 = carry.c1
 		end
+	end
+
+	-- V13.4: se reactiva el Animate propio del herido al desposeer.
+	if d.animate and d.animate.Parent then
+		d.animate.Enabled = d.animateEnabled
 	end
 
 	vh.PlatformStand = d.platform
@@ -1040,7 +1100,7 @@ local function limpiarPoseyendo(pl, motivo)
 	restaurarControlador(e)
 	restaurarVictima(e)
 	RE_Cuerpo:FireClient(pl, "POSE_STOP", motivo)
-	print("[Spidey V13.3] posesion terminada: " .. tostring(e.victima and e.victima.Name) .. " (" .. tostring(motivo or "manual") .. ")")
+	print("[Spidey V13.4] posesion terminada: " .. tostring(e.victima and e.victima.Name) .. " (" .. tostring(motivo or "manual") .. ")")
 end
 
 local function iniciarPoseyendo(pl)
@@ -1105,11 +1165,11 @@ local function iniciarPoseyendo(pl)
 	pl:SetAttribute("SpideyPoseyendo", victima.Name)
 	victima:SetAttribute("SpideyPoseidoPor", pl.Name)
 	RE_Cuerpo:FireClient(pl, "POSE_START", victima)
-	print("[Spidey V13.3] posesion real: " .. victima.Name .. " (por " .. pl.Name .. ")")
+	print("[Spidey V13.4] posesion real: " .. victima.Name .. " (por " .. pl.Name .. ")")
 	return true
 end
 
-RE_Cuerpo.OnServerEvent:Connect(function(pl, accion, a)
+RE_Cuerpo.OnServerEvent:Connect(function(pl, accion, a, b, c)
 	if accion == "POSE_START" then
 		local ahora = os.clock()
 		if ultimoPoseIntento[pl] and ahora - ultimoPoseIntento[pl] < 0.25 then return end
@@ -1123,6 +1183,8 @@ RE_Cuerpo.OnServerEvent:Connect(function(pl, accion, a)
 			local v = Vector3.new(a.X, 0, a.Z)
 			if v.Magnitude > 1 then v = v.Unit end
 			e.mov = v
+			e.sprint = b == true
+			e.jump = c == true
 		end
 	end
 end)
@@ -1136,11 +1198,29 @@ RunService.Heartbeat:Connect(function()
 		if not ok or victimaNaceOtra then
 			limpiarPoseyendo(pl, victimaNaceOtra and "la victima respawneo" or "ya no es valido")
 		else
-			e.victimaHum.PlatformStand = false
-			e.victimaHum.AutoRotate = true
-			e.victimaHum.WalkSpeed = 16
-			e.victimaHRP.Anchored = false
-			e.victimaHum:Move(e.mov or Vector3.zero, false)
+			-- V13.4: el herido NO se levanta. Se mueve por CFrame como un
+			-- cadaver inmovilizado y hace sus propias animaciones.
+			local vh = e.victimaHum
+			local vr = e.victimaHRP
+			vh.PlatformStand = true
+			vh.AutoRotate = false
+			vh.WalkSpeed = 0
+			vh.JumpPower = 0
+			vh.UseJumpPower = true
+
+			local ahora = os.clock()
+			if not e.ultimoUpdate then
+				e.ultimoUpdate = ahora
+				e.offset = Vector3.zero
+				e.startCF = (e.datosV and e.datosV.startCF) or vr.CFrame
+			end
+			local dt = math.clamp(ahora - e.ultimoUpdate, 0, 0.1)
+			e.ultimoUpdate = ahora
+			local velocidad = e.sprint and 24 or 16
+			e.offset = e.offset + (e.mov or Vector3.zero) * velocidad * dt
+			vr.CFrame = e.startCF + e.offset
+			vr.AssemblyLinearVelocity = Vector3.zero
+			vr.AssemblyAngularVelocity = Vector3.zero
 			seguirBajoControlador(e)
 			actualizarAnimacionesServer(e)
 		end
@@ -1187,9 +1267,9 @@ _G.SpideyV13Servidor = {
 	end,
 }
 
-print("[Spidey V13.3] servidor listo: tool Control posee el cuerpo que estas cargando")
+print("[Spidey V13.4] servidor listo: tool Control posee el cuerpo que estas cargando")
 
-print("[Spidey V13.3] Servidor listo; valida telaranas y difunde animaciones por RE_Anim")
+print("[Spidey V13.4] Servidor listo; valida telaranas y difunde animaciones por RE_Anim")
 
 else
 --=================================================================
@@ -1198,7 +1278,7 @@ else
 -- Candado: si otra copia de este script ya corre en este cliente, sale.
 if _G.__SPIDEY_V11_ACTIVO then return end
 _G.__SPIDEY_V11_ACTIVO = true
-print("[Spidey V13.3] cargando...")
+print("[Spidey V13.4] cargando...")
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -1223,7 +1303,7 @@ end
 RE = RS:FindFirstChild("SpideyRemotos")
 if not RE then
 	sinServidor = true
-	print("[Spidey V13.3] sin servidor: MODO UNIVERSAL (giros visibles para todos por fisica)")
+	print("[Spidey V13.4] sin servidor: MODO UNIVERSAL (giros visibles para todos por fisica)")
 	RE = Instance.new("Folder")
 	RE.Name = "SpideyRemotos"
 	RE.Parent = RS
@@ -2355,7 +2435,7 @@ local function probarAnimaciones()
 					end
 					if track.Length > 0 then
 						tracksVisibles[nombre] = track
-						print(string.format("[Spidey V13.3] %s visible para TODOS (id %d, %.2fs)", nombre, id, track.Length))
+						print(string.format("[Spidey V13.4] %s visible para TODOS (id %d, %.2fs)", nombre, id, track.Length))
 						break
 					else
 						pcall(function() track:Destroy() end)
@@ -2363,7 +2443,7 @@ local function probarAnimaciones()
 				end
 			end
 			if not tracksVisibles[nombre] and candidatosAnim(nombre)[1] then
-				print("[Spidey V13.3] " .. nombre .. ": ninguna animacion visible carga en este juego (queda la fisica/poses locales)")
+				print("[Spidey V13.4] " .. nombre .. ": ninguna animacion visible carga en este juego (queda la fisica/poses locales)")
 			end
 		end
 		animProbandose = false
@@ -2743,7 +2823,7 @@ local poseyendoVictima = nil
 local poseyendoDatos = nil
 local function bucle(dt)
 	if not hrp or not hum then return end
-	-- V13.3: mientras controlas otro cuerpo, tu avatar queda quieto
+	-- V13.4: mientras controlas otro cuerpo, tu avatar queda quieto
 	-- debajo del mapa; no ejecutes telarana/poses en el.
 	if poseyendo then return end
 
@@ -3215,7 +3295,7 @@ local function alNacer(c)
 	task.wait(1)
 	if player.Character == c then
 		crearGUI()
-		print("[Spidey V13.3] cliente listo | rig=" .. tostring(Pose.Tipo(char)) .. " | A/B procedurales")
+		print("[Spidey V13.4] cliente listo | rig=" .. tostring(Pose.Tipo(char)) .. " | A/B procedurales")
 	end
 end
 
@@ -3232,7 +3312,7 @@ end
 
 RunService.Heartbeat:Connect(bucle)
 -----------------------------------------------------------------
--- V13.3 · POSESION REAL (tool Control), LOCK (Q) y ESP (J)
+-- V13.4 · POSESION REAL (tool Control), LOCK (Q) y ESP (J)
 -- El control ya no usa G ni crea clones: se activa con el tool
 -- Control SOLO cuando ya estas cargando a un cuerpo derribado.
 -----------------------------------------------------------------
@@ -3510,10 +3590,10 @@ function V11.AlternarESP()
 		for _, p in ipairs(Players:GetPlayers()) do
 			aplicarESPPJugador(p)
 		end
-		print("[Spidey V13.3] ESP ACTIVADO: contorno blanco + nombres (atraviesa paredes)")
+		print("[Spidey V13.4] ESP ACTIVADO: contorno blanco + nombres (atraviesa paredes)")
 		mostrarHUD("ESP ACTIVADO (J para apagar)")
 	else
-		print("[Spidey V13.3] ESP DESACTIVADO")
+		print("[Spidey V13.4] ESP DESACTIVADO")
 		mostrarHUD("ESP DESACTIVADO")
 	end
 	task.delay(2, function()
@@ -3741,7 +3821,7 @@ local function parchearGunHandler()
 	end
 	gunHandlerParcheado = true
 	gunHandlerParcheando = false
-	print("[Spidey V13.3] armas nuevas (Revolver/escopetas): getAim dirigido al lock")
+	print("[Spidey V13.4] armas nuevas (Revolver/escopetas): getAim dirigido al lock")
 	return true
 end
 -- El require de un modulo del juego puede CEDER (esperando el
@@ -3889,7 +3969,7 @@ local function bloquearModeloLock(modelo)
 	elseif b.enviarApuntado then
 		modo = "apuntado remoto"
 	end
-	print("[Spidey V13.3] lock: " .. nombre .. " (" .. modo .. ")")
+	print("[Spidey V13.4] lock: " .. nombre .. " (" .. modo .. ")")
 	return true
 end
 
@@ -3994,7 +4074,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -----------------------------------------------------------------
--- V13.3 · CONTROL REAL: entradas, camara y limpieza del cliente
+-- V13.4 · CONTROL REAL: entradas, camara y limpieza del cliente
 -- Con servidor: el servidor mueve el cuerpo real y anima. Este
 -- cliente solo manda WASD, pone la camara y muestra el HUD.
 -- Sin servidor: intento local directo (menos fiable, solo util si
@@ -4237,7 +4317,7 @@ arrancarPoseyendoLocal = function(victima, remoto)
 
 	local nombre = victima.Name
 	mostrarHUD("CONTROLANDO: " .. nombre .. "   |   Z = desposeer (sigues cargando)")
-	print("[Spidey V13.3] controlando cuerpo real: " .. nombre .. " | Z = desposeer")
+	print("[Spidey V13.4] controlando cuerpo real: " .. nombre .. " | Z = desposeer")
 	if not datos.remoto then
 		seguirBajoMapa()
 	end
@@ -4427,7 +4507,7 @@ local function terminarPoseyendoInterno(motivo)
 
 	player:SetAttribute("SpideyTestMove", nil)
 	mostrarHUD(nil)
-	print("[Spidey V13.3] posesion soltada (" .. tostring(motivo or "manual") .. ")")
+	print("[Spidey V13.4] posesion soltada (" .. tostring(motivo or "manual") .. ")")
 	return true
 end
 
@@ -4471,7 +4551,10 @@ local function actualizarPoseyendoLocal()
 		-- la orden y mantenemos la camara en el cuerpo.
 		if (os.clock() - ultimoEnvioPose) >= 1 / 30 then
 			ultimoEnvioPose = os.clock()
-			RE_Cuerpo:FireServer("POSE_MOVE", vector)
+			local sprint = UIS:IsKeyDown(Enum.KeyCode.LeftShift)
+				or UIS:IsKeyDown(Enum.KeyCode.RightShift)
+			local salto = UIS:IsKeyDown(Enum.KeyCode.Space)
+			RE_Cuerpo:FireServer("POSE_MOVE", vector, sprint, salto)
 		end
 	else
 		local vh = d.victimaHum
