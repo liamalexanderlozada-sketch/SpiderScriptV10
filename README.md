@@ -416,4 +416,8 @@ importan son `Grabbed`, `Grabbed` inverso y el weld, que si se replican.- Commit
 
 Verificado en **modo servidor** (pose activa, -13.00 studs, noclip) y en
 **modo local/executor simulado** (camara en el herido, movimiento -32 studs
-en 2 s, noclip 50/50, auto-fin al recuperar vida, diagnostico impreso).
+en 2 s, noclip 50/50, auto-fin al recuperar vida, diagnostico impreso).- Commit de V13.6: `22bc7476f7c818a5df816b64c0ca5bd0efd8c7ce`.
+- Tamano: **175.470 bytes**.
+- SHA256: `DE5729E65E3FB94FABD27D44663873D3E3520092BC78D1F07697E5D1AFC29A21`.
+- Sintaxis validada con `luau-compile --only-parse` (exit 0).
+- Raw verificado en vivo tras el push (cabecera `SPIDER V13.6` presente).
