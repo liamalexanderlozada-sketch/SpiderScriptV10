@@ -66,7 +66,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/liamalexanderlozada-s
 ```
 
 Si tu ejecutor cachea la URL, usa la URL por commit:
-`https://raw.githubusercontent.com/liamalexanderlozada-sketch/SpiderScriptV10/COMMIT_AQUI/Resources/Scripts/Main.lua`
+`https://raw.githubusercontent.com/liamalexanderlozada-sketch/SpiderScriptV10/c9e708f0aa8bf6e8e5b99588c31586489ca90fca/Resources/Scripts/Main.lua`
 
 > Si ya tenías una versión anterior cargada en la misma sesión, **rejoin**:
 > el candado `_G.__SPIDEY_V11_ACTIVO` impide cargar dos veces el script.
@@ -337,6 +337,7 @@ deseado, porque el hook ignora valores idénticos al anterior.
 
 Los tres son **idénticos** al `SPIDER V13.2.lua` entregado.
 
+- Commit de V13.2: `c9e708f0aa8bf6e8e5b99588c31586489ca90fca`.
 - Tamaño: **149.914 bytes**.
 - SHA256: `12363F08979A257834A3DF89300BE509C8BD658415B45AC9DCFB219FC4723D97`.
 - Sintaxis validada con `luau-compile --only-parse` (exit 0).
