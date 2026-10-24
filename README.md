@@ -12,6 +12,38 @@ sonidos, GUI y animaciones A/B) **+ LOCK, ESP y POSESION REAL DEL CUERPO
 CARGADO** en **un solo archivo combinado**: sirve como script de servidor y
 como LocalScript/executor. Se adapta solo con `RunService:IsServer()`.
 
+# Spiderscript V13.6 - detecta el agarre de la pierna SI O SI
+
+Sistema **Spider-Man completo** (telarana, fisica de pendulo, trepa, camara,
+sonidos, GUI y animaciones A/B) **+ LOCK, ESP y POSESION REAL DEL CUERPO
+CARGADO** en **un solo archivo combinado**: sirve como script de servidor y
+como LocalScript/executor. Se adapta solo con `RunService:IsServer()`.
+
+> **Novedad V13.6: senal Massless + cuerpo tirado cerca + diagnostico**
+>
+> - **Massless**: el Helper de Da Hood deja TODAS las partes del herido en
+>   `Massless = true` mientras lo cargas y las devuelve a `false` al
+>   soltarlo. Esa senal se replica SIEMPRE al cliente y no depende del
+>   weld. V13.6 ya no toca Massless durante la posesion para que la senal
+>   siga viva (y asi la posesion termina sola cuando el juego suelta).
+> - **Ultimo recurso**: si el juego ya no crea weld ni `Grabbed`, con el
+>   clic explicito del tool Control se acepta el cuerpo **herido**
+>   (K.O. / muerto / vida < 45) que tengas pegado a ti. La posesion se
+>   mantiene con las reglas del propio Helper (suelta al herido cuando su
+>   vida llega a 45): al recuperar vida, la posesion termina sola.
+> - **Resolver con puntuacion**: antes el servidor devolvia el PRIMER
+>   modelo que coincidia y podia elegir un NPC cualquiera del mapa (p.ej.
+>   un "BullCarnival" massless). Ahora puntua todas las candidatas
+>   (Grabbed +3, weld +2, massless +1, tirado +1, cerca +1) y gana la de
+>   mas puntos, con desempate por distancia. El cliente tambien desempata
+>   por senales y distancia.
+> - **Diagnostico completo**: si la deteccion falla en modo executor, la
+>   consola imprime `[Spidey V13.6] no se detecto carga: <motivo>` y un
+>   volcado de cada cuerpo cercano (distancia, K.O, Dead, PlatformStand,
+>   vida, Grabbed, weld, massless) para revisarlo en F9.
+> - Sigue todo lo de V13.5: cadaveres con `Dead=true`/`Health=0` validos,
+>   weld en cualquier direccion, Grabbed inverso, motivo en el HUD,
+>   apagado del weld recreado y **NOCLIP** del cuerpo original.
 > **Novedad V13.5: detecta el agarre de la pierna SI O SI + noclip**
 >
 > - En el Da Hood real el cuerpo que cargas puede tener `Dead = true` o
@@ -371,3 +403,17 @@ importan son `Grabbed`, `Grabbed` inverso y el weld, que si se replican.- Commit
 - SHA256: `4D1D47F93D3E35870FFAE14DC72A9974EC9BF11B1E8C192BEDB25948467073AA`.
 - Sintaxis validada con `luau-compile --only-parse` (exit 0).
 - Raw verificado en vivo tras el push (cabecera `SPIDER V13.5` presente).
+## Pruebas V13.6 (copia nueva, dummy clon con el ragdoll real del juego)
+
+| Escenario | Resultado |
+| --- | --- |
+| Solo `Massless` (sin Grabbed, sin weld, KO=false, vida 20) | detecta `[massless]`, pose activa |
+| Juego suelta (`Massless=false` + `PlatformStand=false`) | la posesion termina sola |
+| CERO senales (KO=true, vida 12, nada mas) | detecta `[cuerpo tirado cerca]`, pose activa |
+| El herido recupera vida (KO=false, vida 60 >= 45) | la posesion termina sola, jugador arriba |
+| Nada cerca | rechaza con motivo + diagnostico en consola |
+| Resolver del servidor | ya no elige NPCs del mapa: puntua senales + distancia |
+
+Verificado en **modo servidor** (pose activa, -13.00 studs, noclip) y en
+**modo local/executor simulado** (camara en el herido, movimiento -32 studs
+en 2 s, noclip 50/50, auto-fin al recuperar vida, diagnostico impreso).
