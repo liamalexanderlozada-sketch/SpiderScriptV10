@@ -1735,9 +1735,18 @@ else
 --=================================================================
 --  MITAD CLIENTE: telarana, fisica y animaciones A/B procedurales
 --=================================================================
--- Candado: si otra copia de este script ya corre en este cliente, sale.
-if _G.__SPIDEY_V11_ACTIVO then return end
-_G.__SPIDEY_V11_ACTIVO = true
+-- Candado V13 (PROPIO de esta version): el V8/V12 usaba el mismo
+-- candado (_G.__SPIDEY_V11_ACTIVO); si lo habias ejecutado antes en
+-- la misma partida, esta version salia SIN DECIR NADA y parecia que
+-- "no ejecutaba". Ahora el candado es propio de V13: SIEMPRE carga.
+if _G.__SPIDEY_V13_ACTIVO then
+	print("[Spidey V13.9] ya esta cargado en esta sesion: haz rejoin para recargarlo")
+	return
+end
+_G.__SPIDEY_V13_ACTIVO = true
+if _G.__SPIDEY_V11_ACTIVO then
+	print("[Spidey V13.9] habia una version vieja (V8/V12) activa: esta NUEVA funciona igual; haz rejoin para quitar la vieja del todo")
+end
 print("[Spidey V13.9] cargando...")
 
 local Players = game:GetService("Players")
