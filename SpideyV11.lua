@@ -494,7 +494,7 @@ end)
 
 local acumulador = 0
 RunService.Heartbeat:Connect(function(dt)
-acumulador += dt
+acumulador = acumulador + dt
 if acumulador >= 0.25 then
 acumulador = 0
 for _, player in ipairs(Players:GetPlayers()) do
@@ -1529,9 +1529,9 @@ if junta then
 rig.juntas[clave] = junta
 rig.tipos[clave] = tipo
 if tipo == "AC" then
-cuentaAC += 1
+cuentaAC = cuentaAC + 1
 elseif tipo == "M6D" then
-cuentaM6 += 1
+cuentaM6 = cuentaM6 + 1
 end
 end
 end
@@ -1674,9 +1674,9 @@ function Pose.Update(dt)
 local k = 1 - math.exp(-(dt or 0) * 14)
 for _, n in ipairs(ORDEN) do
 local a, d = actual[n], objetivo[n]
-a.x += (d.x - a.x) * k
-a.y += (d.y - a.y) * k
-a.z += (d.z - a.z) * k
+a.x = a.x + (d.x - a.x) * k
+a.y = a.y + (d.y - a.y) * k
+a.z = a.z + (d.z - a.z) * k
 end
 end
 
@@ -2136,7 +2136,7 @@ t = math.clamp(t, 0, datos.duracion)
 
 local i = 1
 while i < #frames and t > frames[i + 1].t do
-i += 1
+i = i + 1
 end
 local a = frames[i]
 local b = frames[i + 1] or frames[i]
