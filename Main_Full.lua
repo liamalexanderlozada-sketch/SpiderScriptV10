@@ -196,6 +196,89 @@ LO NUEVO DE V13.8 (SIMPLE, como lo pediste):
 ]]
 
 --=================================================================
+-- COMPATIBILIDAD CON EXPLOITS LUA 5.1 (sin Luau)
+-- Roblox/Luau trae math.clamp, table.find, table.clear, task, etc.
+-- Un exploit basado en Lua 5.1 puro NO: al llegar a esas funciones
+-- reventaba con "attempt to call a nil value". Aqui se crean SOLO
+-- si faltan, asi que en Roblox/Luau no cambia absolutamente nada.
+--=================================================================
+if not math.clamp then
+	function math.clamp(v, minimo, maximo)
+		if v < minimo then return minimo end
+		if v > maximo then return maximo end
+		return v
+	end
+end
+if not math.round then
+	function math.round(v)
+		return math.floor(v + 0.5)
+	end
+end
+if not math.sign then
+	function math.sign(v)
+		if v > 0 then return 1 end
+		if v < 0 then return -1 end
+		return 0
+	end
+end
+if not table.find then
+	function table.find(t, valor, desde)
+		for i = desde or 1, #t do
+			if t[i] == valor then return i end
+		end
+		return nil
+	end
+end
+if not table.clear then
+	function table.clear(t)
+		for k in pairs(t) do t[k] = nil end
+	end
+end
+if not table.create then
+	function table.create(n, valor)
+		local t = {}
+		for i = 1, n do t[i] = valor end
+		return t
+	end
+end
+if not table.unpack then
+	table.unpack = unpack
+end
+if not string.split then
+	function string.split(texto, separador)
+		local salida = {}
+		if separador == "" then
+			for i = 1, #texto do salida[i] = string.sub(texto, i, i) end
+			return salida
+		end
+		local desde = 1
+		while true do
+			local a, b = string.find(texto, separador, desde, true)
+			if not a then
+				salida[#salida + 1] = string.sub(texto, desde)
+				break
+			end
+			salida[#salida + 1] = string.sub(texto, desde, a - 1)
+			desde = b + 1
+		end
+		return salida
+	end
+end
+if not warn then
+	warn = function(...) print(...) end
+end
+if not task then
+	task = {}
+	task.wait = function(n) return wait(n) end
+	task.spawn = function(f, ...) return coroutine.resume(coroutine.create(f), ...) end
+	task.delay = function(n, f, ...) return delay(n, f, ...) end
+	task.defer = function(f, ...) return delay(0, f, ...) end
+	task.cancel = function() end
+	task.synchronize = function() end
+	task.desynchronize = function() end
+end
+
+--=================================================================
 -- UTILIDADES COMPARTIDAS (servidor y cliente): deteccion del agarre
 -- real de Da Hood. Van ANTES del if IsServer para que las dos mitades
 -- del archivo las vean.
