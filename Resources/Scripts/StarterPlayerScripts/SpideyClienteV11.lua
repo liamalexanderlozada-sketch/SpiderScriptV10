@@ -1,8 +1,30 @@
 --[[
-	SPIDER V13.8 · TODO EL SISTEMA EN UN SOLO SCRIPT COMBINADO
+	SPIDER V13.9 · TODO EL SISTEMA EN UN SOLO SCRIPT COMBINADO
 	Servidor + Cliente en el mismo archivo. Se adapta solo.
 
-	LO NUEVO DE V13.8 (SIMPLE, como lo pediste):
+	LO NUEVO DE V13.9:
+	  - TU CUERPO ORIGINAL VA ABAJO DEL CADAVER: al poseer, el
+	    cadaver se levanta y camina, y tu cuerpo real queda tumbado
+	    13 studs DEBAJO de el (desmayado, tieso, con noclip para no
+	    trabarse). Ya NO va pegado al costado: parece que el muerto
+	    camina solo. Todos lo ven asi porque los CFrame de tu cuerpo
+	    tambien se replican (el weld de carga se apaga en tu cliente).
+	  - TOOL "ARRANCAR" (nuevo): agarra al herido del brazo o de la
+	    pierna, equipa Arrancar y haz clic: ESA extremidad se separa
+	    de su cuerpo y cae. El herido sigue siendo un cadaver y puede
+	    caminar (poseido o no) ya sin ese brazo/pierna. En modo
+	    servidor el joint se destruye de verdad (permanente); en
+	    executor se apaga en tu cliente y la caida se replica por la
+	    propiedad de red que te dio el Helper al cargar.
+	  - BLINDAJE AL DESPOSEER: si algo sale mal (error interno,
+	    respawn), la posesion se corta sola y tu cuerpo vuelve
+	    SIEMPRE arriba, a un piso seguro (raycast). Se corrige el bug
+	    "a veces me quedaba abajo/invisible".
+	  - Se guarda la tecnica del "clic que arranco la pierna en Da
+	    Hood real y todos la vieron": separar joints con la propiedad
+	    de red del Helper (base del tool Arrancar).
+
+LO NUEVO DE V13.8 (SIMPLE, como lo pediste):
 	  Ya NO se detecta nada del juego. Derribas a tu amigo, te
 	  agachas, lo agarras de la pierna, equipas el tool Control y
 	  haces clic: se posee directamente el cuerpo DERRIBADO mas
@@ -207,7 +229,20 @@ local function extremosDe(obj)
 	return nil, nil
 end
 
+-- V13.9: permite pasar un Player O un Model a las busquedas de union.
+-- En el servidor, e.controlador es el Player: sin esto, el weld de
+-- carga NUNCA se encontraba (no se apagaba) y el herido quedaba
+-- colgado del cuerpo del jugador en vez de caminar.
+local function comoModelo(x)
+	if typeof(x) == "Instance" and x:IsA("Player") then
+		return x.Character
+	end
+	return x
+end
+
 local function weldCargaEntre(a, b)
+	a = comoModelo(a)
+	b = comoModelo(b)
 	if not a or not b or not a.Parent or not b.Parent then return nil end
 	for _, contenedor in ipairs({ a, b }) do
 		for _, obj in ipairs(contenedor:GetDescendants()) do
@@ -229,6 +264,8 @@ end
 -- apagar las que el juego recree durante la posesion.
 local function weldsCargaDe(controlador, victima)
 	local lista, vistos = {}, {}
+	controlador = comoModelo(controlador)
+	victima = comoModelo(victima)
 	if not controlador or not victima then return lista end
 	for _, contenedor in ipairs({ controlador, victima }) do
 		if contenedor and contenedor.Parent then
@@ -521,7 +558,7 @@ end)
 -- StarterPlayer.StarterPlayerScripts.SpideyClienteV11 (LocalScript).
 -- Un Script de servidor no puede crear codigo cliente en runtime.
 if not game:GetService("StarterPlayer").StarterPlayerScripts:FindFirstChild("SpideyClienteV11") then
-	warn("[Spidey V13.8] Falta el LocalScript SpideyClienteV11 (pegar este mismo archivo en StarterPlayerScripts)")
+	warn("[Spidey V13.9] Falta el LocalScript SpideyClienteV11 (pegar este mismo archivo en StarterPlayerScripts)")
 end
 
 local CFG = {
@@ -559,6 +596,14 @@ local function configurarToolControl(tool)
 	tool.ManualActivationOnly = false
 end
 
+local function configurarToolArrancar(tool)
+	tool.Name = "Arrancar"
+	tool.ToolTip = "Clic: arrancar el brazo/pierna que estas agarrando"
+	tool.RequiresHandle = false
+	tool.CanBeDropped = false
+	tool.ManualActivationOnly = false
+end
+
 local function crearToolSiFalta(player, nombre, configurar)
 	-- Si StarterPack ya tiene el Tool, el motor lo copia al Backpack al
 	-- reaparecer. No creamos otro para no duplicar.
@@ -578,6 +623,7 @@ end
 local function crearToolsSiFalta(player)
 	crearToolSiFalta(player, "Spider", configurarTool)
 	crearToolSiFalta(player, "Control", configurarToolControl)
+	crearToolSiFalta(player, "Arrancar", configurarToolArrancar)
 end
 
 local function prepararJugador(player)
@@ -1284,7 +1330,7 @@ local function limpiarPoseyendo(pl, motivo)
 	restaurarControlador(e)
 	restaurarVictima(e)
 	RE_Cuerpo:FireClient(pl, "POSE_STOP", motivo)
-	print("[Spidey V13.8] posesion terminada: " .. tostring(e.victima and e.victima.Name) .. " (" .. tostring(motivo or "manual") .. ")")
+	print("[Spidey V13.9] posesion terminada: " .. tostring(e.victima and e.victima.Name) .. " (" .. tostring(motivo or "manual") .. ")")
 end
 
 -- V13.8: SIN deteccion de carga. Devuelve el cuerpo DERRIBADO (tirado:
@@ -1329,7 +1375,7 @@ local function iniciarPoseyendo(pl)
 	local c = pl.Character
 	local tool = c and c:FindFirstChild("Control")
 	if not tool or not tool:IsA("Tool") then
-		print("[Spidey V13.8] POSE_NO: falta el tool Control equipado")
+		print("[Spidey V13.9] POSE_NO: falta el tool Control equipado")
 		RE_Cuerpo:FireClient(pl, "POSE_NO", "Equipa el tool Control")
 		return false
 	end
@@ -1338,7 +1384,7 @@ local function iniciarPoseyendo(pl)
 	-- sabe cuando esta cargando a alguien).
 	local victima = resolverVictimaCarga(pl)
 	if not victima or not victima.Parent then
-		print("[Spidey V13.8] POSE_NO: ningun cuerpo derrribado a menos de 18 studs")
+		print("[Spidey V13.9] POSE_NO: ningun cuerpo derrribado a menos de 18 studs")
 		RE_Cuerpo:FireClient(pl, "POSE_NO", "No hay ningun cuerpo derrribado cerca")
 		return false
 	end
@@ -1382,7 +1428,92 @@ local function iniciarPoseyendo(pl)
 	pl:SetAttribute("SpideyPoseyendo", victima.Name)
 	victima:SetAttribute("SpideyPoseidoPor", pl.Name)
 	RE_Cuerpo:FireClient(pl, "POSE_START", victima)
-	print("[Spidey V13.8] posesion real: " .. victima.Name .. " (por " .. pl.Name .. ")")
+	print("[Spidey V13.9] posesion real: " .. victima.Name .. " (por " .. pl.Name .. ")")
+	return true
+end
+
+-- V13.9 ARRANCAR (servidor): separa de verdad la extremidad que el
+-- jugador tiene agarrada. Se destruye el Motor6D de hombro/cadera y
+-- la extremidad cae con fisica real: TODOS la ven y no vuelve.
+local ultimoRasgado = {}
+local CADENAS_RASGAR = {
+	{ "RightUpperLeg", "RightLowerLeg", "RightFoot", "Right Leg" },
+	{ "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "Left Leg" },
+	{ "RightUpperArm", "RightLowerArm", "RightHand", "Right Arm" },
+	{ "LeftUpperArm", "LeftLowerArm", "LeftHand", "Left Arm" },
+}
+
+local function rasgarVictima(pl, victima)
+	local c = pl and pl.Character
+	local cr = c and hrpDe(c)
+	if not victima or not victima.Parent or not victima:IsA("Model") then return false end
+	local vh = humDe(victima)
+	local vr = hrpDe(victima)
+	if not vh or not vr then return false end
+	if not cr or (cr.Position - vr.Position).Magnitude > 22 then return false end
+
+	-- La extremidad mas cercana al torso = la que esta agarrando.
+	local ref = c:FindFirstChild("UpperTorso") or c:FindFirstChild("Torso") or cr
+	local mejorCadena, mejorDist = nil, math.huge
+	for _, cadena in ipairs(CADENAS_RASGAR) do
+		local raiz = victima:FindFirstChild(cadena[1]) or victima:FindFirstChild(cadena[4])
+		if raiz and raiz:IsA("BasePart") then
+			local d = (raiz.Position - ref.Position).Magnitude
+			if d < mejorDist then
+				mejorDist, mejorCadena = d, cadena
+			end
+		end
+	end
+	if not mejorCadena then return false end
+
+	local partes = {}
+	for _, nombre in ipairs(mejorCadena) do
+		local p = victima:FindFirstChild(nombre)
+		if p and p:IsA("BasePart") then table.insert(partes, p) end
+	end
+	if #partes == 0 then return false end
+
+	local raiz = partes[1]
+	local enCadena = {}
+	for _, p in ipairs(partes) do enCadena[p] = true end
+	local joints = {}
+	for _, j in ipairs(victima:GetDescendants()) do
+		local ok, p0, p1 = pcall(function() return j.Part0, j.Part1 end)
+		if ok and typeof(p0) == "Instance" and typeof(p1) == "Instance"
+			and p0:IsA("BasePart") and p1:IsA("BasePart")
+			and enCadena[p0] ~= enCadena[p1]
+			and p0.Name ~= p1.Name then
+			if j.ClassName == "AnimationConstraint" or j.ClassName == "Motor6D" then
+				table.insert(joints, 1, j)
+			else
+				table.insert(joints, j)
+			end
+		end
+	end
+	if #joints == 0 then return false end
+
+	-- Separacion REAL: se destruyen TODOS los joints de esa extremidad
+	-- (AnimationConstraint en Da Hood, Motor6D en rigs normales) y cae
+	-- con fisica real. El herido sigue siendo un cadaver y podra
+	-- caminar sin esa parte.
+	for _, j in ipairs(joints) do
+		pcall(function() j:Destroy() end)
+	end
+	for _, p in ipairs(partes) do
+		if p.Parent then
+			p.CanCollide = true
+			p.Massless = false
+			-- Empujon hacia fuera + caida: se ve desprenderse.
+			local dir = Vector3.new(math.random(-6, 6), -12, math.random(-6, 6))
+			local f = p.Position - vr.Position
+			f = Vector3.new(f.X, 0, f.Z)
+			if f.Magnitude > 0.5 then dir = f.Unit * 8 + Vector3.new(0, -12, 0) end
+			p.AssemblyLinearVelocity = dir
+			p.AssemblyAngularVelocity = Vector3.new(
+				math.random(-6, 6), math.random(-6, 6), math.random(-6, 6))
+		end
+	end
+	print("[Spidey V13.9] extremidad arrancada de " .. victima.Name .. " (por " .. pl.Name .. ")")
 	return true
 end
 
@@ -1394,6 +1525,13 @@ RE_Cuerpo.OnServerEvent:Connect(function(pl, accion, a, b, c)
 		iniciarPoseyendo(pl)
 	elseif accion == "POSE_STOP" then
 		limpiarPoseyendo(pl, "manual")
+	elseif accion == "RASGAR" then
+		local ahora = os.clock()
+		if ultimoRasgado[pl] and ahora - ultimoRasgado[pl] < 0.75 then return end
+		ultimoRasgado[pl] = ahora
+		if typeof(a) == "Instance" and a:IsA("Model") then
+			rasgarVictima(pl, a)
+		end
 	elseif accion == "POSE_MOVE" then
 		local e = poseyendo[pl]
 		if e and typeof(a) == "Vector3" then
@@ -1589,9 +1727,9 @@ _G.SpideyV13Servidor = {
 	end,
 }
 
-print("[Spidey V13.8] servidor listo: tool Control posee el cuerpo que estas cargando")
+print("[Spidey V13.9] servidor listo: tool Control posee el cuerpo que estas cargando")
 
-print("[Spidey V13.8] Servidor listo; valida telaranas y difunde animaciones por RE_Anim")
+print("[Spidey V13.9] Servidor listo; valida telaranas y difunde animaciones por RE_Anim")
 
 else
 --=================================================================
@@ -1600,7 +1738,7 @@ else
 -- Candado: si otra copia de este script ya corre en este cliente, sale.
 if _G.__SPIDEY_V11_ACTIVO then return end
 _G.__SPIDEY_V11_ACTIVO = true
-print("[Spidey V13.8] cargando...")
+print("[Spidey V13.9] cargando...")
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -1625,7 +1763,7 @@ end
 RE = RS:FindFirstChild("SpideyRemotos")
 if not RE then
 	sinServidor = true
-	print("[Spidey V13.8] sin servidor: MODO UNIVERSAL (giros visibles para todos por fisica)")
+	print("[Spidey V13.9] sin servidor: MODO UNIVERSAL (giros visibles para todos por fisica)")
 	RE = Instance.new("Folder")
 	RE.Name = "SpideyRemotos"
 	RE.Parent = RS
@@ -2757,7 +2895,7 @@ local function probarAnimaciones()
 					end
 					if track.Length > 0 then
 						tracksVisibles[nombre] = track
-						print(string.format("[Spidey V13.8] %s visible para TODOS (id %d, %.2fs)", nombre, id, track.Length))
+						print(string.format("[Spidey V13.9] %s visible para TODOS (id %d, %.2fs)", nombre, id, track.Length))
 						break
 					else
 						pcall(function() track:Destroy() end)
@@ -2765,7 +2903,7 @@ local function probarAnimaciones()
 				end
 			end
 			if not tracksVisibles[nombre] and candidatosAnim(nombre)[1] then
-				print("[Spidey V13.8] " .. nombre .. ": ninguna animacion visible carga en este juego (queda la fisica/poses locales)")
+				print("[Spidey V13.9] " .. nombre .. ": ninguna animacion visible carga en este juego (queda la fisica/poses locales)")
 			end
 		end
 		animProbandose = false
@@ -3617,7 +3755,7 @@ local function alNacer(c)
 	task.wait(1)
 	if player.Character == c then
 		crearGUI()
-		print("[Spidey V13.8] cliente listo | rig=" .. tostring(Pose.Tipo(char)) .. " | A/B procedurales")
+		print("[Spidey V13.9] cliente listo | rig=" .. tostring(Pose.Tipo(char)) .. " | A/B procedurales")
 	end
 end
 
@@ -3782,7 +3920,7 @@ local function diagnosticarCarga()
 	if not hrpPropio then return end
 	local g = valorBody(char, "Grabbed")
 	local koPropio = valorKO(char)
-	print(("[Spidey V13.8] diagnostico | mi Grabbed=%s | mi K.O=%s | tool=%s | hrp=%s"):format(
+	print(("[Spidey V13.9] diagnostico | mi Grabbed=%s | mi K.O=%s | tool=%s | hrp=%s"):format(
 		tostring(g and g.Value),
 		tostring(koPropio and koPropio.Value),
 		tostring(char:FindFirstChildOfClass("Tool")),
@@ -3800,7 +3938,7 @@ local function diagnosticarCarga()
 		local vg = valorBody(modelo, "Grabbed")
 		local w = weldCargaEntre(char, modelo)
 		local okEstado, estado = pcall(function() return vh:GetState() end)
-		print(("[Spidey V13.8]   %s | dist=%.1f | KO=%s Dead=%s PS=%s vida=%.1f | estado=%s | HRPanc=%s | su Grabbed=%s | union=%s(%s) | massless=%s"):format(
+		print(("[Spidey V13.9]   %s | dist=%.1f | KO=%s Dead=%s PS=%s vida=%.1f | estado=%s | HRPanc=%s | su Grabbed=%s | union=%s(%s) | massless=%s"):format(
 			modelo.Name, d,
 			tostring(valorKO(modelo) and valorKO(modelo).Value),
 			tostring((valorBody(modelo, "Dead") and valorBody(modelo, "Dead").Value)),
@@ -3823,7 +3961,7 @@ local function diagnosticarCarga()
 		revisar(pl.Character)
 	end
 	if mostrados == 0 then
-		print("[Spidey V13.8]   ningun cuerpo con Humanoid a menos de 40 studs")
+		print("[Spidey V13.9]   ningun cuerpo con Humanoid a menos de 40 studs")
 	end
 end
 
@@ -3938,10 +4076,254 @@ local function asegurarControlTool()
 	t.Parent = bp
 end
 
+-----------------------------------------------------------------
+-- V13.9 TOOL ARRANCAR: con el herido agarrado del brazo o de la
+-- pierna, un clic SEPARA esa extremidad de su cuerpo. Todos ven
+-- caer la extremidad; el herido sigue siendo un cadaver y podra
+-- caminar (poseido o no) ya sin ese brazo/pierna.
+-----------------------------------------------------------------
+local arrancarTool = nil
+local arrancarConexiones = {}
+local ultimoArranque = 0
+local extremidadesReforzadas = {}
+
+-- Cadenas de extremidades R15 y R6 (raiz primero, respaldo R6 al final).
+local CADENAS_EXTREMIDAD = {
+	{ "RightUpperLeg", "RightLowerLeg", "RightFoot", "Right Leg" },
+	{ "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "Left Leg" },
+	{ "RightUpperArm", "RightLowerArm", "RightHand", "Right Arm" },
+	{ "LeftUpperArm", "LeftLowerArm", "LeftHand", "Left Arm" },
+}
+
+local function partesDeCadena(victima, cadena)
+	local partes = {}
+	for _, nombre in ipairs(cadena) do
+		local p = victima:FindFirstChild(nombre)
+		if p and p:IsA("BasePart") then table.insert(partes, p) end
+	end
+	return partes
+end
+
+-- La extremidad que estoy agarrando: la mas cercana a mi torso.
+local function extremidadAgarrada(victima)
+	if not char or not victima or not victima.Parent then return nil, nil end
+	local ref = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or hrp
+	if not ref then return nil, nil end
+	local mejorCadena, mejorDist = nil, math.huge
+	for _, cadena in ipairs(CADENAS_EXTREMIDAD) do
+		local raiz = victima:FindFirstChild(cadena[1]) or victima:FindFirstChild(cadena[4])
+		if raiz and raiz:IsA("BasePart") then
+			local d = (raiz.Position - ref.Position).Magnitude
+			if d < mejorDist then
+				mejorDist, mejorCadena = d, cadena
+			end
+		end
+	end
+	if not mejorCadena then return nil, nil end
+	local partes = partesDeCadena(victima, mejorCadena)
+	if #partes == 0 then return nil, nil end
+	local esBrazo = string.find(mejorCadena[1], "Arm", 1, true) ~= nil
+	return partes, esBrazo
+end
+
+-- TODOS los joints que unen la extremidad con el resto del cuerpo.
+-- Da Hood usa AnimationConstraint (15) + welds internos de hitbox:
+-- se apagan TODOS los que crucen la extremidad hacia fuera, menos
+-- los welds internos de hitbox (Part0 y Part1 con el mismo nombre).
+-- Los AnimationConstraint/Motor6D van primero en la lista.
+local function jointsExtremidad(victima, partes)
+	local enCadena = {}
+	for _, p in ipairs(partes) do enCadena[p] = true end
+	local lista = {}
+	for _, j in ipairs(victima:GetDescendants()) do
+		local ok, p0, p1 = pcall(function() return j.Part0, j.Part1 end)
+		if ok and typeof(p0) == "Instance" and typeof(p1) == "Instance"
+			and p0:IsA("BasePart") and p1:IsA("BasePart")
+			and enCadena[p0] ~= enCadena[p1]
+			and p0.Name ~= p1.Name then
+			if j.ClassName == "AnimationConstraint" or j.ClassName == "Motor6D" then
+				table.insert(lista, 1, j)
+			else
+				table.insert(lista, j)
+			end
+		end
+	end
+	return lista
+end
+
+local function soltarExtremidadFisica(partes, victima)
+	local centro = nil
+	local vr = victima and victima:FindFirstChild("HumanoidRootPart")
+	if vr then centro = vr.Position end
+	for _, p in ipairs(partes) do
+		if p.Parent then
+			p.CanCollide = true
+			p.Massless = false
+			-- Empujon hacia FUERA del cuerpo + caida: se ve desprenderse.
+			local dir = Vector3.new(math.random(-6, 6), -10, math.random(-6, 6))
+			if centro then
+				local f = p.Position - centro
+				f = Vector3.new(f.X, 0, f.Z)
+				if f.Magnitude > 0.5 then dir = f.Unit * 7 + Vector3.new(0, -10, 0) end
+			end
+			p.AssemblyLinearVelocity = dir
+			p.AssemblyAngularVelocity = Vector3.new(
+				math.random(-6, 6), math.random(-6, 6), math.random(-6, 6))
+		end
+	end
+end
+
+local function arrancarExtremidadAhora()
+	local ahora = os.clock()
+	if ahora - ultimoArranque < 1 then return false end
+	ultimoArranque = ahora
+
+	-- Si estamos poseyendo, se arranca del cuerpo controlado; si no,
+	-- del cuerpo derrribado que tenemos agarrado.
+	local victima = poseyendo and poseyendoVictima or nil
+	if not victima then
+		victima = detectarCarga()
+	end
+	if not victima then
+		mostrarHUD("Agarra a alguien del brazo o de la pierna primero")
+		task.delay(1.6, function()
+			if not poseyendo then mostrarHUD(nil) end
+		end)
+		return false
+	end
+
+	local partes, esBrazo = extremidadAgarrada(victima)
+	if not partes then
+		mostrarHUD("No encuentro el brazo/pierna agarrado")
+		task.delay(1.6, function()
+			if not poseyendo then mostrarHUD(nil) end
+		end)
+		return false
+	end
+	local joints = jointsExtremidad(victima, partes)
+	if #joints == 0 then
+		mostrarHUD("Ese cuerpo no tiene articulacion en la extremidad")
+		return false
+	end
+
+	local nombreExt = esBrazo and "BRAZO" or "PIERNA"
+	local nombreVict = victima.Name
+
+	-- Local (inmediato): mientras cargas al herido, el Helper te dio
+	-- la propiedad de red de sus partes. DESTRUYENDO los joints aqui,
+	-- la extremidad queda suelta en la fisica que TU simulas y su
+	-- caida se replica: TODOS la ven desprenderse y caer (igual que
+	-- la vez que el clic arranco la pierna en Da Hood real).
+	-- OJO: en Da Hood el rig usa AnimationConstraint: apagar Enabled
+	-- SOLO quita la animacion, NO separa la union fisica. Hay que
+	-- destruir el joint para que la extremidad caera de verdad.
+	for _, j in ipairs(joints) do
+		pcall(function() j:Destroy() end)
+	end
+	soltarExtremidadFisica(partes, victima)
+	table.insert(extremidadesReforzadas, { js = joints, p = partes, t = os.clock() })
+
+	if not sinServidor then
+		-- Modo servidor: ademas se destruye de verdad (permanente).
+		RE_Cuerpo:FireServer("RASGAR", victima)
+	end
+	print("[Spidey V13.9] " .. nombreExt .. " separado de " .. nombreVict)
+
+	mostrarHUD(nombreExt .. " ARRANCADO a " .. nombreVict)
+	task.delay(2.2, function()
+		if not poseyendo then mostrarHUD(nil) end
+	end)
+	return true
+end
+
+-- Refuerzo: mantiene la extremidad separada unos segundos aunque el
+-- servidor intente re-simularla al recuperar la propiedad de red.
+task.spawn(function()
+	while true do
+		local ahora = os.clock()
+		for i = #extremidadesReforzadas, 1, -1 do
+			local it = extremidadesReforzadas[i]
+			local vivos = 0
+			for _, j in ipairs(it.js or {}) do
+				if j.Parent then vivos = vivos + 1 end
+			end
+			if vivos == 0 then
+				table.remove(extremidadesReforzadas, i)
+			elseif ahora - it.t < 30 then
+				-- Si el juego RECREA el joint (CheckingKOED puede
+				-- recrear joints), se vuelve a destruir para que la
+				-- extremidad siga suelta.
+				for _, j in ipairs(it.js or {}) do
+					if j.Parent then
+						pcall(function() j:Destroy() end)
+					end
+				end
+				for _, p in ipairs(it.p) do
+					if p.Parent and not p.Anchored and p.AssemblyLinearVelocity.Magnitude < 1 then
+						p.AssemblyLinearVelocity = Vector3.new(0, -4, 0)
+					end
+				end
+			else
+				table.remove(extremidadesReforzadas, i)
+			end
+		end
+		task.wait(0.4)
+	end
+end)
+
+local function engancharArrancarTool(t)
+	if not t or not t:IsA("Tool") or t.Name ~= "Arrancar" then return end
+	if arrancarTool == t then return end
+	for _, c in ipairs(arrancarConexiones) do c:Disconnect() end
+	table.clear(arrancarConexiones)
+	arrancarTool = t
+	t.RequiresHandle = false
+	t.CanBeDropped = false
+	t.ManualActivationOnly = false
+	t.ToolTip = "Clic: arrancar el brazo/pierna que estas agarrando"
+	table.insert(arrancarConexiones, t.Activated:Connect(function()
+		arrancarExtremidadAhora()
+	end))
+end
+
+local function buscarArrancarTool()
+	arrancarTool = nil
+	for _, c in ipairs(arrancarConexiones) do c:Disconnect() end
+	table.clear(arrancarConexiones)
+	local lugares = {}
+	if char then table.insert(lugares, char) end
+	local bp = player:FindFirstChild("Backpack")
+	if bp then table.insert(lugares, bp) end
+	for _, lugar in ipairs(lugares) do
+		for _, c in ipairs(lugar:GetChildren()) do
+			if c:IsA("Tool") and c.Name == "Arrancar" then
+				engancharArrancarTool(c)
+				return
+			end
+		end
+	end
+end
+
+local function asegurarArrancarTool()
+	if not sinServidor then return end
+	local bp = player:FindFirstChild("Backpack")
+	if not bp then return end
+	if bp:FindFirstChild("Arrancar") or (char and char:FindFirstChild("Arrancar")) then return end
+	local t = Instance.new("Tool")
+	t.Name = "Arrancar"
+	t.ToolTip = "Clic: arrancar el brazo/pierna que estas agarrando"
+	t.RequiresHandle = false
+	t.CanBeDropped = false
+	t.ManualActivationOnly = false
+	t.Parent = bp
+end
+
 task.spawn(function()
 	while true do
 		asegurarControlTool()
 		buscarControlTool()
+		asegurarArrancarTool()
+		buscarArrancarTool()
 		task.wait(0.5)
 	end
 end)
@@ -4035,10 +4417,10 @@ function V11.AlternarESP()
 		for _, p in ipairs(Players:GetPlayers()) do
 			aplicarESPPJugador(p)
 		end
-		print("[Spidey V13.8] ESP ACTIVADO: contorno blanco + nombres (atraviesa paredes)")
+		print("[Spidey V13.9] ESP ACTIVADO: contorno blanco + nombres (atraviesa paredes)")
 		mostrarHUD("ESP ACTIVADO (J para apagar)")
 	else
-		print("[Spidey V13.8] ESP DESACTIVADO")
+		print("[Spidey V13.9] ESP DESACTIVADO")
 		mostrarHUD("ESP DESACTIVADO")
 	end
 	task.delay(2, function()
@@ -4266,7 +4648,7 @@ local function parchearGunHandler()
 	end
 	gunHandlerParcheado = true
 	gunHandlerParcheando = false
-	print("[Spidey V13.8] armas nuevas (Revolver/escopetas): getAim dirigido al lock")
+	print("[Spidey V13.9] armas nuevas (Revolver/escopetas): getAim dirigido al lock")
 	return true
 end
 -- El require de un modulo del juego puede CEDER (esperando el
@@ -4414,7 +4796,7 @@ local function bloquearModeloLock(modelo)
 	elseif b.enviarApuntado then
 		modo = "apuntado remoto"
 	end
-	print("[Spidey V13.8] lock: " .. nombre .. " (" .. modo .. ")")
+	print("[Spidey V13.9] lock: " .. nombre .. " (" .. modo .. ")")
 	return true
 end
 
@@ -4813,7 +5195,7 @@ arrancarPoseyendoLocal = function(victima, remoto)
 
 	local nombre = victima.Name
 	mostrarHUD("CONTROLANDO: " .. nombre .. "   |   Z = desposeer (sigues cargando)")
-	print("[Spidey V13.8] controlando cuerpo real: " .. nombre .. " | Z = desposeer")
+	print("[Spidey V13.9] controlando cuerpo real: " .. nombre .. " | Z = desposeer")
 	if not datos.remoto then
 		seguirBajoMapa()
 	end
@@ -4873,32 +5255,20 @@ seguirBajoMapa = function()
 	local vr = d.victimaHRP
 	if not vr or not vr.Parent or not hrp or not hrp.Parent then return end
 
-	-- V13.9 WELD-RIDE: mientras cargas al herido, el juego MANTIENE un
-	-- weld entre tu torso y su cuerpo. Si tu cuerpo se pone a -13, el
-	-- servidor lo devuelve una y otra vez al lado del herido (pelea
-	-- eterna). En vez de pelear, tu cuerpo se pone EXACTAMENTE donde
-	-- el weld del juego quiere que este: cero correcciones, todos ven
-	-- lo mismo (tu cuerpo va al lado del cadaver, como cuando lo
-	-- cargas con la pierna). Sin weld, tu cuerpo baja 13 studs.
-	local carry = d.carry
-	local puesto = false
-	if carry and carry.c and carry.c.Parent and carry.c0
-		and carry.p0 and carry.p0.Parent and carry.p0:IsDescendantOf(char)
-		and carry.rel then
-		pcall(function()
-			local torsoCF = vr.CFrame * carry.c1 * carry.c0:Inverse()
-			hrp.CFrame = torsoCF * carry.rel:Inverse()
-			puesto = true
-		end)
-	end
-	if not puesto then
-		local vpos = vr.Position
-		local abajo = Vector3.new(vpos.X, vpos.Y - 13, vpos.Z)
-		local look = vr.CFrame.LookVector
-		local forward = Vector3.new(look.X, 0, look.Z)
-		if forward.Magnitude < 0.01 then forward = Vector3.zAxis else forward = forward.Unit end
-		hrp.CFrame = CFrame.lookAt(abajo, abajo + Vector3.yAxis, forward)
-	end
+	-- V13.9 CUERPO ABAJO DEL CADAVER (como pidio el usuario): el weld
+	-- de carga ya esta DESACTIVADO en este cliente (arrancarPoseyendo
+	-- local), asi que el cliente es libre de colocar su cuerpo donde
+	-- sea. Tu cuerpo real queda 13 studs DEBAJO del cadaver levantado,
+	-- tumbado, tieso y desmayado: parece que el muerto camina solo.
+	-- Como este cliente tiene la propiedad de red de las partes (la da
+	-- el Helper al cargar), estos CFrame se replican: TODOS ven el
+	-- cadaver arriba caminando y tu cuerpo abajo del mapa.
+	local vpos = vr.Position
+	local abajo = Vector3.new(vpos.X, vpos.Y - 13, vpos.Z)
+	local look = vr.CFrame.LookVector
+	local forward = Vector3.new(look.X, 0, look.Z)
+	if forward.Magnitude < 0.01 then forward = Vector3.zAxis else forward = forward.Unit end
+	hrp.CFrame = CFrame.lookAt(abajo, abajo + Vector3.yAxis, forward)
 	-- V13.9: NO se ancla localmente. Un HRP anclado en el cliente
 	-- detiene la replicacion de TODO el conjunto soldado (tu cuerpo +
 	-- el herido) y el movimiento del cadaver se volvia SOLO VISUAL.
@@ -5011,36 +5381,66 @@ local function terminarPoseyendoInterno(motivo)
 		end
 
 		local propio = d.propio
-		if propio and propio.hrp and propio.hrp.Parent then
+		-- V13.9 BLINDAJE (bug "me quedo abajo/invisible"): el hrp/hum
+		-- guardados al poseer pueden estar VIEJOS si el personaje
+		-- respawneo durante la posesion. Se usa el CUERPO ACTUAL como
+		-- respaldo y SIEMPRE se escribe una posicion segura arriba.
+		local hrpAhora = (propio and propio.hrp and propio.hrp.Parent and propio.hrp)
+			or (char and char:FindFirstChild("HumanoidRootPart"))
+		local humAhora = (propio and propio.hum and propio.hum.Parent and propio.hum)
+			or (char and char:FindFirstChildOfClass("Humanoid"))
+		if hrpAhora and hrpAhora.Parent then
 			local destino
 			local yaw = 0
-			local vr = d.victimaHRP
-			if vr and vr.Parent then
-				local cf = vr.CFrame * CFrame.new(0, 0, 4.5)
+			local vrFin = d.victimaHRP
+			if vrFin and vrFin.Parent then
+				local cf = vrFin.CFrame * CFrame.new(0, 0, 4.5)
 				destino = cf.Position + Vector3.new(0, 1.5, 0)
-				local l = vr.CFrame.LookVector
+				local l = vrFin.CFrame.LookVector
 				local plano = Vector3.new(l.X, 0, l.Z)
 				if plano.Magnitude > 0.01 then yaw = math.atan2(plano.X, plano.Z) end
 			else
-				destino = (propio.cframe and propio.cframe.Position or Vector3.zero) + Vector3.new(0, 3, 0)
+				destino = (propio and propio.cframe and propio.cframe.Position or Vector3.zero) + Vector3.new(0, 3, 0)
 			end
-			propio.hrp.CFrame = CFrame.new(destino) * CFrame.Angles(0, yaw, 0)
-			propio.hrp.Anchored = propio.anclado
-			local h = propio.hum
+			-- Piso seguro: si el destino cae dentro del suelo o de una
+			-- pared (o debajo del mapa), se sube hasta 3 studs sobre el
+			-- suelo real mas cercano hacia abajo.
+			do
+				local rp = RaycastParams.new()
+				rp.FilterType = Enum.RaycastFilterType.Exclude
+				rp.FilterDescendantsInstances = { char, d.victima }
+				local hit = workspace:Raycast(destino + Vector3.new(0, 3, 0), Vector3.new(0, -12, 0), rp)
+				if hit then
+					local sueloY = hit.Position.Y + 3
+					if destino.Y < sueloY then destino = Vector3.new(destino.X, sueloY, destino.Z) end
+				end
+			end
+			hrpAhora.CFrame = CFrame.new(destino) * CFrame.Angles(0, yaw, 0)
+			hrpAhora.Anchored = (propio and propio.anclado) or false
+			hrpAhora.AssemblyLinearVelocity = Vector3.zero
+			hrpAhora.AssemblyAngularVelocity = Vector3.zero
+			local h = humAhora
 			if h and h.Parent then
-				h.WalkSpeed = propio.walk
-				h.JumpPower = propio.jump
-				h.UseJumpPower = propio.use
-				h.PlatformStand = propio.platform
-				h.AutoRotate = propio.auto
-				if not propio.anclado then
+				h.WalkSpeed = (propio and propio.walk) or 16
+				h.JumpPower = (propio and propio.jump) or 50
+				h.UseJumpPower = (propio and propio.use) or true
+				h.PlatformStand = (propio and propio.platform) or false
+				h.AutoRotate = (propio and propio.auto) or true
+				if not (propio and propio.anclado) then
 					pcall(function() h:ChangeState(Enum.HumanoidStateType.GettingUp) end)
 				end
 			end
 			-- V13.8: se devuelve la colision original del cuerpo.
-			for _, item in ipairs(propio.partes or {}) do
+			for _, item in ipairs((propio and propio.partes) or {}) do
 				if item.p and item.p.Parent then
 					item.p.CanCollide = item.cc
+				end
+			end
+			-- Si el personaje cambio, tambien se restauran las partes del
+			-- cuerpo NUEVO (sus colisiones pueden haber quedado en false).
+			if hrpAhora ~= (propio and propio.hrp) and char then
+				for _, p in ipairs(char:GetDescendants()) do
+					if p:IsA("BasePart") then p.CanCollide = true end
 				end
 			end
 		end
@@ -5063,7 +5463,7 @@ local function terminarPoseyendoInterno(motivo)
 
 	player:SetAttribute("SpideyTestMove", nil)
 	mostrarHUD(nil)
-	print("[Spidey V13.8] posesion soltada (" .. tostring(motivo or "manual") .. ")")
+	print("[Spidey V13.9] posesion soltada (" .. tostring(motivo or "manual") .. ")")
 	return true
 end
 
@@ -5291,7 +5691,7 @@ intentarPoseyendo = function()
 		end
 	end
 	if not victima then
-		print("[Spidey V13.8] no se detecto carga: " .. tostring(motivo))
+		print("[Spidey V13.9] no se detecto carga: " .. tostring(motivo))
 		diagnosticarCarga()
 		mostrarHUD("No hay ningun cuerpo derrribado cerca")
 		task.delay(1.5, function()
@@ -5300,7 +5700,7 @@ intentarPoseyendo = function()
 		return false
 	end
 
-	print("[Spidey V13.8] cuerpo objetivo: " .. victima.Name .. " [" .. tostring(motivo) .. "]")
+	print("[Spidey V13.9] cuerpo objetivo: " .. victima.Name .. " [" .. tostring(motivo) .. "]")
 
 	if not sinServidor then
 		RE_Cuerpo:FireServer("POSE_START")
@@ -5335,7 +5735,14 @@ end)
 
 RunService.RenderStepped:Connect(function()
 	if poseyendo then
-		actualizarPoseyendoLocal()
+		-- V13.9: si actualizar da un error, la posesion se termina y
+		-- el cuerpo vuelve ARRIBA. Sin esto, un error dejaba al jugador
+		-- tumbado debajo del mapa para siempre ("me quedo abajo").
+		local ok, err = pcall(actualizarPoseyendoLocal)
+		if not ok then
+			warn("[Spidey V13.9] error en posesion: " .. tostring(err))
+			terminarPoseyendoLocal("error interno", true)
+		end
 	end
 end)
 

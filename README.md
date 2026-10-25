@@ -1,4 +1,34 @@
-# Spiderscript V13.8 — posesion SIMPLE + TODOS ven el cadaver 🕷️
+# Spiderscript V13.9 — cuerpo ABAJO del cadaver + tool ARRANCAR 🕷️
+
+Sistema **Spider-Man completo** (telarana, fisica de pendulo, trepa, camara,
+sonidos, GUI y animaciones A/B) **+ LOCK, ESP, POSESION REAL DEL CUERPO
+CARGADO y ARRANCAR EXTREMIDADES** en **un solo archivo combinado**: sirve
+como script de servidor y como LocalScript/executor. Se adapta solo con
+`RunService:IsServer()`.
+
+> **Novedad V13.9**
+>
+> - **TU CUERPO VA ABAJO DEL CADAVER**: al poseer, el cadaver se levanta y
+>   camina y tu cuerpo real queda tumbado 13 studs DEBAJO (desmayado,
+>   tieso): parece que el muerto camina solo. Ya no va pegado al costado.
+>   Verificado en Studio: diffY = -13.0 exacto (servidor y executor).
+> - **TOOL "ARRANCAR" (nuevo)**: agarra al herido del brazo o de la pierna,
+>   equipa **Arrancar** y haz clic: esa extremidad SE SEPARA del cuerpo y
+>   cae, y el herido sigue caminando ya sin ella (poseido o no). En modo
+>   servidor el joint se destruye de verdad (permanente); en executor se
+>   destruye en tu cliente y la separacion se replica por la propiedad de
+>   red del Helper (la misma tecnica del "clic que arranco la pierna" en
+>   Da Hood real). Descubrimiento: el rig de Da Hood usa
+>   **AnimationConstraint** (15) + 32 welds de hitbox, y apagar
+>   `Enabled` NO separa la union fisica: hay que destruir el joint.
+> - **BLINDAJE AL DESPOSEER**: si algo sale mal (error interno, respawn),
+>   la posesion se corta sola y tu cuerpo vuelve SIEMPRE arriba, a un piso
+>   seguro con raycast. Corrige el bug "a veces me quedaba abajo/invisible".
+> - **Bug del modo servidor arreglado**: el weld de carga nunca se
+>   encontraba (se buscaba en el Player, no en el Character) y el herido
+>   quedaba colgado del jugador. Ahora si se apaga y el cuerpo queda -13.
+
+# Spiderscript V13.8 — posesion SIMPLE + TODOS ven el cadaver
 
 Sistema **Spider-Man completo** (telarana, fisica de pendulo, trepa, camara,
 sonidos, GUI y animaciones A/B) **+ LOCK, ESP y POSESION REAL DEL CUERPO
