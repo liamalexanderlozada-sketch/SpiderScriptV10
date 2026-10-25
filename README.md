@@ -169,11 +169,12 @@ como LocalScript/executor. Se adapta solo con `RunService:IsServer()`.
 ## Loadstring (executor / potassium)
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/liamalexanderlozada-sketch/SpiderScriptV10/main/Resources/Scripts/Main.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/liamalexanderlozada-sketch/SpiderScriptV10/main/Main.lua"))()
 ```
 
 Si tu ejecutor cachea la URL, usa la URL por commit:
-`https://raw.githubusercontent.com/liamalexanderlozada-sketch/SpiderScriptV10/01d848338048d9cc72919ac042b9302e0dc94860/Resources/Scripts/Main.lua`
+`https://raw.githubusercontent.com/liamalexanderlozada-sketch/SpiderScriptV10/COMMIT/Main.lua`
+(sustituye COMMIT por el hash del commit más reciente).
 
 > Si ya tenías una versión anterior cargada en la misma sesión, **rejoin**:
 > el candado `_G.__SPIDEY_V11_ACTIVO` impide cargar dos veces el script.
@@ -412,15 +413,13 @@ deseado, porque el hook ignora valores idénticos al anterior.
 - El herido no se levanta: sigue siendo un cadáver controlado.
 - No se tocó el lock, el ESP, la trepa ni la telaraña.
 
-## Archivos
+## Archivos (en la raíz del repo, sin carpetas)
 
-- `Resources/Scripts/Main.lua` — el archivo que sirve el loadstring (combinado).
-- `Resources/Scripts/ServerScriptService/SpideyV11.lua` — copia para el Script
-  de servidor.
-- `Resources/Scripts/StarterPlayerScripts/SpideyClienteV11.lua` — copia para el
-  LocalScript de StarterPlayerScripts.
+- `Main.lua` — el archivo que sirve el loadstring (combinado).
+- `SpideyV11.lua` — copia para el Script de servidor.
+- `SpideyClienteV11.lua` — copia para el LocalScript de StarterPlayerScripts.
 
-Los tres son **idénticos** al `SPIDER V13.4.lua` entregado.
+Los tres son **idénticos** al `SPIDER V13.8.lua` entregado (versión V13.9).
 
 - Commit de V13.4: `01d848338048d9cc72919ac042b9302e0dc94860`.
 - Tamaño: **156.053 bytes**.
